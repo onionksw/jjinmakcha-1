@@ -116,7 +116,7 @@ export const getTmapTransitRoutes = async (startLoc: string, endLoc: string): Pr
         const data = await response.json();
         console.log("TMAP Transit API response:", data);
 
-        // 응답 에러 처리 수정
+        // 응답 에러 처리
         if (data.error) {
             const errorMsg = data.error.message || 'Unknown error';
             if (data.error.code === 'INVALID_API_KEY') {
@@ -125,13 +125,15 @@ export const getTmapTransitRoutes = async (startLoc: string, endLoc: string): Pr
             throw new Error(`Transit API Error: ${errorMsg}`);
         }
 
-        // result.status가 0이 아니면 오류
-        if (data.result?.status !== 0) {
-            throw new Error(data.result?.message || "경로를 찾을 수 없습니다.");
+        // result.status가 명시적으로 존재하고 0이 아닐 때만 오류
+        if (data.result && data.result.status !== undefined && data.result.status !== 0) {
+            throw new Error(data.result.message || "경로를 찾을 수 없습니다.");
         }
 
         if (!data.metaData?.plan?.itineraries) {
-            throw new Error("경로 데이터가 없습니다.");
+            // 응답 전체 구조 로깅해서 디버깅
+            console.log("Full TMAP response:", JSON.stringify(data).slice(0, 500));
+            throw new Error("경로 데이터가 없습니다. 출발지/도착지를 더 정확하게 입력해주세요.");
         }
 
         const itineraries = data.metaData.plan.itineraries;
