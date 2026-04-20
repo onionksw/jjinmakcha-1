@@ -2,6 +2,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const API_KEY = process.env.ODSAY_API_KEY || '';
 const BASE = 'https://api.odsay.com/v1/api';
+// Vercel이 자동 제공하는 URL 또는 직접 설정한 URL
+const SITE_URL = process.env.ODSAY_REFERER
+  || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { SX, SY, EX, EY } = req.query as Record<string, string>;
@@ -11,11 +14,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   try {
     const url = `${BASE}/searchPubTransPathT?SX=${SX}&SY=${SY}&EX=${EX}&EY=${EY}&apiKey=${API_KEY}`;
-    // 브라우저의 Referer/Origin을 ODsay에 전달 (도메인 인증 우회)
-    const referer = (req.headers['referer'] || req.headers['origin'] || '') as string;
+    console.log('ODsay 호출 Referer:', SITE_URL);
     const r = await fetch(url, {
       headers: {
-        'Referer': referer,
+        'Referer': SITE_URL,
+        'Origin': SITE_URL,
         'User-Agent': 'Mozilla/5.0',
       },
     });
