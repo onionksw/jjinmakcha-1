@@ -1,0 +1,7 @@
+{
+  "name": "Jjin-Makcha (찐막차)",
+  "description": "The ultimate late-night hybrid route finder. Save taxi costs by combining public transport with short taxi rides. Features cost comparison and last-train countdowns.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

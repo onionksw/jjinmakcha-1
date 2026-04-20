@@ -163,6 +163,16 @@ export const getTmapTransitRoutes = async (startLoc: string, endLoc: string): Pr
                 let endName = leg.end?.name || '';
                 const path: {lat: number, lng: number}[] = [];
 
+                // 출발/도착 시간 파싱 (epoch ms → HH:MM)
+                const toHHMM = (epoch: any): string | undefined => {
+                    if (!epoch) return undefined;
+                    const d = new Date(Number(epoch));
+                    if (isNaN(d.getTime())) return undefined;
+                    return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+                };
+                const segDepartureTime = toHHMM(leg.startTime);
+                const segArrivalTime = toHHMM(leg.endTime);
+
                 // Extract path coordinates from linestring
                 if (leg.mode === 'WALK' && leg.steps) {
                     leg.steps.forEach((step: any) => {
@@ -214,7 +224,9 @@ export const getTmapTransitRoutes = async (startLoc: string, endLoc: string): Pr
                     lineName,
                     startName,
                     endName,
-                    path
+                    path,
+                    departureTime: segDepartureTime,
+                    arrivalTime: segArrivalTime,
                 };
             });
 

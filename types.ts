@@ -4,35 +4,40 @@ export interface RouteSegment {
   instruction: string;
   durationMinutes: number;
   cost: number;
-  departureTime?: string; // HH:MM format
-  lineName?: string; // e.g., "N26", "Line 2"
+  departureTime?: string;  // HH:MM
+  arrivalTime?: string;    // HH:MM
+  lineName?: string;
+  startName?: string;
+  endName?: string;
+  path?: { lat: number; lng: number }[];
 }
 
 export interface HybridRoute {
   id: string;
-  name: string; // e.g., "Catch the N26 Bus"
+  name: string;
   totalCost: number;
   totalDuration: number;
   savedAmount: number;
   segments: RouteSegment[];
-  departureTime: string; // ISO string or HH:MM for calculation
-  transferPoint: string; // Where to switch to taxi
-  taxiCostOnly: number; // The baseline cost
+  departureTime: string;
+  transferPoint: string;
+  taxiCostOnly: number;
+  bounds?: { minLat: number; maxLat: number; minLng: number; maxLng: number };
 }
 
 export interface Place {
   id: string;
   name: string;
-  type: string; // e.g. "Izakaya", "24h Cafe"
+  type: string;
   rating: string;
   address: string;
   description: string;
   closingTime: string;
-  tags: string[]; // e.g. ["#Cozy", "#Cheap"]
-  imageKeyword: string; // e.g. "beer", "ramen", "coffee"
-  representativeMenu: string; // e.g. "Assorted Oden Tang"
-  distance: string; // e.g. "300m"
-  imageUrl?: string; // Optional custom image URL
+  tags: string[];
+  imageKeyword: string;
+  representativeMenu: string;
+  distance: string;
+  imageUrl?: string;
 }
 
 export interface UserLocation {

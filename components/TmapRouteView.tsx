@@ -1,117 +1,122 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { HybridRoute } from '../types';
 
-declare global {
-  interface Window {
-    Tmapv2: any;
-  }
-}
+// Leaflet 기본 마커 아이콘 경로 수정
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
 
 interface Props {
   route: HybridRoute;
   height?: string;
 }
 
+const colorMap: Record<string, string> = {
+  walk: '#9CA3AF',
+  bus: '#4CC9F0',
+  subway: '#06D6A0',
+  taxi: '#FFD93D',
+};
+
 const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstance = useRef<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const mapInstance = useRef<L.Map | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    if (!mapRef.current) return;
 
-    const init = () => {
-      if (cancelled || !mapRef.current) return;
-      if (!window.Tmapv2) {
-        setError('TMAP SDK 로드 실패');
-        return;
+    // 경로 좌표 수집
+    const allCoords: [number, number][] = [];
+    (route as any).segments?.forEach((seg: any) => {
+      if (seg.path?.length > 0) {
+        seg.path.forEach((p: any) => allCoords.push([p.lat, p.lng]));
       }
+    });
 
-      const allCoords: { lat: number; lng: number }[] = [];
-      (route as any).segments?.forEach((seg: any) => {
-        if (seg.path?.length > 0) allCoords.push(...seg.path);
+    if (allCoords.length === 0) return;
+
+    // 기존 지도 제거
+    if (mapInstance.current) {
+      mapInstance.current.remove();
+      mapInstance.current = null;
+    }
+
+    // 지도 생성 (OpenStreetMap 타일)
+    const map = L.map(mapRef.current, { zoomControl: true }).setView(
+      allCoords[Math.floor(allCoords.length / 2)],
+      13
+    );
+    mapInstance.current = map;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    // 세그먼트별 경로 그리기
+    (route as any).segments?.forEach((seg: any) => {
+      if (!seg.path || seg.path.length < 2) return;
+      const latlngs: [number, number][] = seg.path.map((p: any) => [p.lat, p.lng]);
+      L.polyline(latlngs, {
+        color: colorMap[seg.type] || '#4CC9F0',
+        weight: seg.type === 'walk' ? 3 : 6,
+        dashArray: seg.type === 'walk' ? '6, 8' : undefined,
+        opacity: 0.85,
+      }).addTo(map);
+    });
+
+    // 출발/도착 마커
+    const makeIcon = (label: string, bg: string) => L.divIcon({
+      html: `<div style="background:${bg};color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.35)">${label}</div>`,
+      className: '',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+
+    L.marker(allCoords[0], { icon: makeIcon('출', '#4CC9F0') }).addTo(map);
+    L.marker(allCoords[allCoords.length - 1], { icon: makeIcon('도', '#FF6B6B') }).addTo(map);
+
+    // 환승 지점 마커 (walk가 아닌 세그먼트 시작점)
+    const segments = (route as any).segments || [];
+    segments.forEach((seg: any, idx: number) => {
+      if (idx === 0) return; // 출발은 이미 표시
+      if (!seg.path || seg.path.length === 0) return;
+      if (seg.type === 'walk') return; // 도보는 환승 아님
+
+      const pos: [number, number] = [seg.path[0].lat, seg.path[0].lng];
+      const bgColor = seg.type === 'subway' ? '#06D6A0' : seg.type === 'bus' ? '#4CC9F0' : '#FFD93D';
+      const emoji = seg.type === 'subway' ? '🚇' : seg.type === 'bus' ? '🚌' : '🚕';
+
+      const icon = L.divIcon({
+        html: `<div style="background:${bgColor};color:white;border-radius:12px;padding:2px 7px;font-size:11px;font-weight:900;border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);white-space:nowrap;">${emoji} ${seg.lineName || seg.type}</div>`,
+        className: '',
+        iconAnchor: [0, 10],
       });
 
-      if (allCoords.length === 0) {
-        setError('경로 좌표 없음');
-        return;
-      }
+      L.marker(pos, { icon })
+        .bindPopup(`<b>${seg.startName || ''}</b><br/>${seg.lineName || ''} ${seg.departureTime ? '출발 ' + seg.departureTime : ''}`)
+        .addTo(map);
+    });
 
-      const centerLat = allCoords.reduce((s, c) => s + c.lat, 0) / allCoords.length;
-      const centerLng = allCoords.reduce((s, c) => s + c.lng, 0) / allCoords.length;
+    // 전체 경로가 보이도록 화면 맞춤
+    map.fitBounds(L.latLngBounds(allCoords), { padding: [30, 30] });
 
-      try {
-        mapRef.current.innerHTML = '';
-        const map = new window.Tmapv2.Map(mapRef.current, {
-          center: new window.Tmapv2.LatLng(centerLat, centerLng),
-          width: '100%',
-          height: height,
-          zoom: 13,
-        });
-        mapInstance.current = map;
-
-        const colorMap: Record<string, string> = {
-          walk: '#9CA3AF',
-          bus: '#4CC9F0',
-          subway: '#06D6A0',
-          taxi: '#FFD93D',
-        };
-
-        (route as any).segments?.forEach((seg: any) => {
-          if (!seg.path || seg.path.length < 2) return;
-          const latlngs = seg.path.map((p: any) => new window.Tmapv2.LatLng(p.lat, p.lng));
-          new window.Tmapv2.Polyline({
-            path: latlngs,
-            strokeColor: colorMap[seg.type] || '#4CC9F0',
-            strokeWeight: seg.type === 'walk' ? 3 : 6,
-            strokeStyle: seg.type === 'walk' ? 'dot' : 'solid',
-            map,
-          });
-        });
-
-        new window.Tmapv2.Marker({
-          position: new window.Tmapv2.LatLng(allCoords[0].lat, allCoords[0].lng),
-          map,
-          title: '출발',
-        });
-        const last = allCoords[allCoords.length - 1];
-        new window.Tmapv2.Marker({
-          position: new window.Tmapv2.LatLng(last.lat, last.lng),
-          map,
-          title: '도착',
-        });
-      } catch (e: any) {
-        console.error('Map init error:', e);
-        setError(e.message);
-      }
-    };
-
-    // SDK가 준비될 때까지 대기
-    const timer = setTimeout(init, 300);
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
-      if (mapInstance.current) {
-        try { mapInstance.current.destroy?.(); } catch {}
-        mapInstance.current = null;
-      }
+      map.remove();
+      mapInstance.current = null;
     };
   }, [route]);
 
-  if (error) {
-    return (
-      <div style={{ height }} className="w-full bg-blue-50 flex flex-col items-center justify-center gap-2 text-gray-400">
-        <span className="text-3xl">🗺️</span>
-        <span className="text-sm font-bold">지도를 불러올 수 없습니다</span>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ width: '100%', height, position: 'relative' }}>
-      <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-    </div>
-  );
+  return <div ref={mapRef} style={{ width: '100%', height }} />;
 };
 
 export default TmapRouteView;
