@@ -12,23 +12,6 @@ interface Props {
   height?: string;
 }
 
-const TMAP_KEY = import.meta.env.VITE_TMAP_APP_KEY || '';
-
-let sdkPromise: Promise<void> | null = null;
-
-const loadTmapSdk = (): Promise<void> => {
-  if (sdkPromise) return sdkPromise;
-  sdkPromise = new Promise((resolve, reject) => {
-    if (window.Tmapv2) { resolve(); return; }
-    const script = document.createElement('script');
-    script.src = `https://apis.openapi.sk.com/tmap/js?version=1&appKey=${TMAP_KEY}`;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('TMAP SDK 로드 실패'));
-    document.head.appendChild(script);
-  });
-  return sdkPromise;
-};
-
 const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
@@ -37,28 +20,27 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
   useEffect(() => {
     let cancelled = false;
 
-    const init = async () => {
+    const init = () => {
+      if (cancelled || !mapRef.current) return;
+      if (!window.Tmapv2) {
+        setError('TMAP SDK 로드 실패');
+        return;
+      }
+
+      const allCoords: { lat: number; lng: number }[] = [];
+      (route as any).segments?.forEach((seg: any) => {
+        if (seg.path?.length > 0) allCoords.push(...seg.path);
+      });
+
+      if (allCoords.length === 0) {
+        setError('경로 좌표 없음');
+        return;
+      }
+
+      const centerLat = allCoords.reduce((s, c) => s + c.lat, 0) / allCoords.length;
+      const centerLng = allCoords.reduce((s, c) => s + c.lng, 0) / allCoords.length;
+
       try {
-        await loadTmapSdk();
-        // div가 실제로 마운트된 후 실행되도록 지연
-        await new Promise(r => setTimeout(r, 100));
-        if (cancelled || !mapRef.current || !window.Tmapv2) return;
-
-        // 경로 전체 좌표 수집
-        const allCoords: { lat: number; lng: number }[] = [];
-        (route as any).segments?.forEach((seg: any) => {
-          if (seg.path?.length > 0) allCoords.push(...seg.path);
-        });
-
-        if (allCoords.length === 0) {
-          setError('경로 좌표 데이터가 없습니다.');
-          return;
-        }
-
-        // 중심점
-        const centerLat = allCoords.reduce((s, c) => s + c.lat, 0) / allCoords.length;
-        const centerLng = allCoords.reduce((s, c) => s + c.lng, 0) / allCoords.length;
-
         mapRef.current.innerHTML = '';
         const map = new window.Tmapv2.Map(mapRef.current, {
           center: new window.Tmapv2.LatLng(centerLat, centerLng),
@@ -87,7 +69,6 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
           });
         });
 
-        // 출발/도착 마커
         new window.Tmapv2.Marker({
           position: new window.Tmapv2.LatLng(allCoords[0].lat, allCoords[0].lng),
           map,
@@ -99,16 +80,17 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
           map,
           title: '도착',
         });
-
       } catch (e: any) {
-        console.error('TmapRouteView error:', e);
-        setError(e.message || '지도 로드 실패');
+        console.error('Map init error:', e);
+        setError(e.message);
       }
     };
 
-    init();
+    // SDK가 준비될 때까지 대기
+    const timer = setTimeout(init, 300);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       if (mapInstance.current) {
         try { mapInstance.current.destroy?.(); } catch {}
         mapInstance.current = null;
@@ -121,7 +103,6 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
       <div style={{ height }} className="w-full bg-blue-50 flex flex-col items-center justify-center gap-2 text-gray-400">
         <span className="text-3xl">🗺️</span>
         <span className="text-sm font-bold">지도를 불러올 수 없습니다</span>
-        <span className="text-xs">{error}</span>
       </div>
     );
   }
