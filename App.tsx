@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine } from 'lucide-react';
-import { getTmapTransitRoutes } from './services/tmapService';
+import { getOdsayTransitRoutes } from './services/odsayService';
 import { AppState, HybridRoute, Place } from './types';
 import CostChart from './components/CostChart';
 import Countdown from './components/Countdown';
@@ -246,7 +246,7 @@ const App: React.FC = () => {
 
     try {
       // Fetch Routes from TMAP Transit API
-      const routeData = await getTmapTransitRoutes(startLoc, endLoc);
+      const routeData = await getOdsayTransitRoutes(startLoc, endLoc);
       const { routes: fetchedRoutes, fullTaxiCost: fetchedCost } = routeData;
 
       if (fetchedRoutes.length === 0) {
@@ -1421,29 +1421,11 @@ const App: React.FC = () => {
                                   <span className="text-xs font-bold text-gray-400">{segment.durationMinutes}분</span>
                               </div>
                               <p className="text-gray-800 font-bold text-lg mb-1">{segment.instruction}</p>
-                              {/* 출발/도착 시간 */}
-                              {(segment as any).departureTime && (
-                                <div className="flex items-center gap-3 mt-1 mb-1">
-                                  <span className="text-xs font-bold text-brandBlue bg-blue-50 px-2 py-1 rounded-lg">
-                                    🕐 출발 {(segment as any).departureTime}
-                                  </span>
-                                  {(segment as any).arrivalTime && (
-                                    <span className="text-xs font-bold text-brandMint bg-green-50 px-2 py-1 rounded-lg">
-                                      🏁 도착 {(segment as any).arrivalTime}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
                               {segment.cost > 0 && (
                                   <p className="text-sm text-gray-500 font-medium">예상 비용: {segment.cost.toLocaleString()}원</p>
                               )}
-                              {/* 실시간 도착 정보 */}
-                              {(segment.type === 'subway' || segment.type === 'bus') && (segment as any).startName && (
-                                <RealTimeArrival
-                                  type={segment.type}
-                                  stationName={(segment as any).startName}
-                                  lineName={segment.lineName}
-                                />
+                              {segment.type === 'subway' && segment.instruction && (
+                                  <RealTimeArrival stationName={segment.instruction.split(' ')[0]} />
                               )}
                           </div>
                       </div>
