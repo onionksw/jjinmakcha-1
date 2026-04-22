@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { getGoogleAccessToken } from './_sheetsAuth';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'onion!@34';
 const SHEET_ID = process.env.GOOGLE_SHEET_ID || '';
@@ -22,7 +23,6 @@ function emptyResponse(notice: string) {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // 최상위 try-catch: 어떤 오류든 500 대신 200 반환
   try {
     res.setHeader('Access-Control-Allow-Origin', '*');
     if (req.method === 'OPTIONS') return res.status(200).end();
@@ -34,12 +34,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.json(emptyResponse('Google Sheets 환경변수 미설정'));
     }
 
-    // 동적 import로 모듈 로드 실패도 여기서 catch 가능
-    const { getGoogleAccessToken } = await import('./_sheetsAuth.js');
     const token = await getGoogleAccessToken();
+    const range = encodeURIComponent('Log!A:B');
 
     const r = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Log!A:B`,
+      `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
     const data = await r.json();

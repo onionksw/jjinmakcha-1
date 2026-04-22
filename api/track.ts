@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { getGoogleAccessToken } from './_sheetsAuth';
 
 const VALID_EVENTS = ['visit', 'search', 'signup', 'taxi'];
 const SHEET_ID = process.env.GOOGLE_SHEET_ID || '';
@@ -13,18 +14,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     if (SHEET_ID && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
-      const { getGoogleAccessToken } = await import('./_sheetsAuth.js');
       const token = await getGoogleAccessToken();
       const timestamp = new Date().toISOString();
+      const range = encodeURIComponent('Log!A:B');
 
-      await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/Log!A:B:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+      const r = await fetch(
+        `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
         {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ values: [[timestamp, event]] }),
         }
       );
+      if (!r.ok) {
+        const err = await r.text();
+        console.error('Sheets append error:', r.status, err);
+      }
     }
   } catch (e) {
     console.error('track error:', e);
