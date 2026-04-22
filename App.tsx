@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine } from 'lucide-react';
 import { getOdsayTransitRoutes } from './services/odsayService';
-import { AppState, HybridRoute, Place } from './types';
+import { findLatestDeparture } from './services/latestDepartureService';
+import { AppState, HybridRoute, LDTResult, Place } from './types';
 import CostChart from './components/CostChart';
 import Countdown from './components/Countdown';
 import DaumPostcode from 'react-daum-postcode';
@@ -137,11 +138,36 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
   
   // Postcode Modal State
-  const [postcodeTarget, setPostcodeTarget] = useState<'start' | 'end' | null>(null);
+  const [postcodeTarget, setPostcodeTarget] = useState<'start' | 'end' | 'home' | null>(null);
   
   // Notice Detail State
   const [selectedNotice, setSelectedNotice] = useState<any | null>(null);
   
+  // LDT (오늘의 찐막차) State
+  const [ldtResult, setLdtResult] = useState<LDTResult | null>(null);
+  const [ldtLoading, setLdtLoading] = useState(false);
+  const [ldtRoutes, setLdtRoutes] = useState<HybridRoute[] | null>(null);
+  const [ldtRoutesLoading, setLdtRoutesLoading] = useState(false);
+
+  // 필터 State
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterMaxTaxi, setFilterMaxTaxi] = useState<number>(99999);
+  const [filterMaxWalk, setFilterMaxWalk] = useState<number>(99);
+  const [filterMaxTransfer, setFilterMaxTransfer] = useState<number>(9);
+  const [filterExcludeTaxi, setFilterExcludeTaxi] = useState<boolean>(false);
+  const [filterDepartureTime, setFilterDepartureTime] = useState<string>('');
+  const [isRefetchingRoutes, setIsRefetchingRoutes] = useState(false);
+  const [filterModalType, setFilterModalType] = useState<'taxi' | 'walk' | null>(null);
+  const [filterPickerTemp, setFilterPickerTemp] = useState<number>(99999);
+  const pickerScrollRef = useRef<HTMLDivElement>(null);
+  const [pendingFilters, setPendingFilters] = useState({
+    departureTime: '',
+    maxTaxi: 99999,
+    maxWalk: 99,
+    maxTransfer: 9,
+    excludeTaxi: false,
+  });
+
   // Notification Modal State
   const [isNotiModalOpen, setIsNotiModalOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -168,6 +194,19 @@ const App: React.FC = () => {
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [tempPhone, setTempPhone] = useState('');
   const [walkPreference, setWalkPreference] = useState<'SHORT' | 'CHEAP'>('CHEAP');
+
+  // 피커 모달 열릴 때 현재 선택값으로 스크롤
+  useEffect(() => {
+    if (!filterModalType || !pickerScrollRef.current) return;
+    const options = filterModalType === 'taxi'
+      ? [99999, 5000, 10000, 15000, 20000]
+      : [99, 5, 10, 15, 20, 30];
+    const idx = options.indexOf(filterPickerTemp);
+    if (idx >= 0) {
+      const el = pickerScrollRef.current.children[idx] as HTMLElement | undefined;
+      el?.scrollIntoView({ behavior: 'instant' as ScrollBehavior, block: 'nearest', inline: 'center' });
+    }
+  }, [filterModalType]);
 
   // Splash Screen Effect
   useEffect(() => {
@@ -246,7 +285,8 @@ const App: React.FC = () => {
 
     try {
       // Fetch Routes from TMAP Transit API
-      const routeData = await getOdsayTransitRoutes(startLoc, endLoc);
+      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : undefined;
+      const routeData = await getOdsayTransitRoutes(startLoc, endLoc, undefined, walkThreshold);
       const { routes: fetchedRoutes, fullTaxiCost: fetchedCost } = routeData;
 
       if (fetchedRoutes.length === 0) {
@@ -255,9 +295,31 @@ const App: React.FC = () => {
       } else {
           setRoutes(fetchedRoutes);
           setFullTaxiCost(fetchedCost);
-          // Always use mock places for now as requested
-          setNearbyPlaces(MOCK_PLACES); 
+          setNearbyPlaces(MOCK_PLACES);
           setAppState(AppState.RESULTS);
+
+          // LDT 계산 — 백그라운드 비동기
+          setLdtResult(null);
+          setLdtRoutes(null);
+          setLdtLoading(true);
+          const firstWalkMinutes = fetchedRoutes[0]?.segments
+              .filter(s => s.type === 'walk')
+              .slice(0, 1)
+              .reduce((acc, s) => acc + s.durationMinutes, 0) ?? 0;
+          findLatestDeparture(startLoc, endLoc, firstWalkMinutes)
+              .then(async result => {
+                  setLdtResult(result);
+                  if (result && result.latestDepartureMs) {
+                      setLdtRoutesLoading(true);
+                      try {
+                          const ldtDate = new Date(result.latestDepartureMs);
+                          const { routes: lr } = await getOdsayTransitRoutes(startLoc, endLoc, ldtDate);
+                          setLdtRoutes(lr);
+                      } catch { /* 실패해도 시각 표시는 유지 */ }
+                      finally { setLdtRoutesLoading(false); }
+                  }
+              })
+              .finally(() => setLdtLoading(false));
       }
     } catch (e) {
       console.error(e);
@@ -267,6 +329,61 @@ const App: React.FC = () => {
       setIsLoading(false);
     }
   }, [startLoc, endLoc]);
+
+  // 필터 패널 열릴 때 현재 적용값으로 pending 동기화
+  useEffect(() => {
+    if (filterOpen) {
+      setPendingFilters({
+        departureTime: filterDepartureTime,
+        maxTaxi: filterMaxTaxi,
+        maxWalk: filterMaxWalk,
+        maxTransfer: filterMaxTransfer,
+        excludeTaxi: filterExcludeTaxi,
+      });
+    }
+  }, [filterOpen]);
+
+  // 필터 적용 (패널 "적용" 버튼)
+  const handleApplyFilters = useCallback(async () => {
+    const needsRefetch = pendingFilters.departureTime !== filterDepartureTime
+      || pendingFilters.maxWalk !== filterMaxWalk
+      || pendingFilters.excludeTaxi !== filterExcludeTaxi;
+    setFilterMaxTaxi(pendingFilters.maxTaxi);
+    setFilterMaxWalk(pendingFilters.maxWalk);
+    setFilterMaxTransfer(pendingFilters.maxTransfer);
+    setFilterExcludeTaxi(pendingFilters.excludeTaxi);
+    setFilterDepartureTime(pendingFilters.departureTime);
+    setFilterOpen(false);
+
+    if (needsRefetch && startLoc && endLoc) {
+      setIsRefetchingRoutes(true);
+      try {
+        let depDate: Date | undefined;
+        if (pendingFilters.departureTime) {
+          const [h, m] = pendingFilters.departureTime.split(':').map(Number);
+          depDate = new Date();
+          depDate.setHours(h, m, 0, 0);
+          if (depDate.getTime() < Date.now()) depDate.setDate(depDate.getDate() + 1);
+        }
+        const newWalkThreshold = pendingFilters.maxWalk < 99 ? pendingFilters.maxWalk : undefined;
+        const { routes: r, fullTaxiCost: c } = await getOdsayTransitRoutes(startLoc, endLoc, depDate, newWalkThreshold, pendingFilters.excludeTaxi);
+        if (r.length > 0) { setRoutes(r); setFullTaxiCost(c); }
+        else { setError('해당 시각에 운행 중인 경로가 없습니다. 출발 시간을 변경해보세요.'); }
+      } catch (e: any) {
+        setError(e?.message || '해당 시각에 운행 중인 경로가 없습니다. 심야버스(N버스) 또는 택시를 이용해보세요.');
+      }
+      finally { setIsRefetchingRoutes(false); }
+    }
+  }, [pendingFilters, filterDepartureTime, startLoc, endLoc]);
+
+  // 필터 적용된 경로 목록 (택시 제외는 서비스 레벨에서 이미 처리됨)
+  const filteredRoutes = routes.filter((r: HybridRoute) => {
+    if (!filterExcludeTaxi && r.taxiWalkCost > filterMaxTaxi) return false;
+    const remainWalk = r.segments.filter((s: { type: string }) => s.type === 'walk').reduce((sum: number, s: { durationMinutes: number }) => sum + s.durationMinutes, 0);
+    if (remainWalk > filterMaxWalk) return false;
+    if (r.transferCount > filterMaxTransfer) return false;
+    return true;
+  });
 
   const handleFetchPlacesTab = async () => {
       // Called when clicking "Open Now" tab manually if empty
@@ -309,12 +426,65 @@ const App: React.FC = () => {
   };
 
   const handleSetNotification = (minutes: number | string) => {
-      alert(`${typeof minutes === 'number' ? minutes + '분' : '설정하신 시간'} 전 알림이 설정되었습니다! 🔔`);
       setIsNotiModalOpen(false);
+
+      if (typeof minutes === 'string') return;
+
+      const route = routes.find(r => r.id === activeRouteId);
+      if (!route?.departureTime) {
+          alert('막차 시간 정보를 찾을 수 없어요.');
+          return;
+      }
+
+      const [h, m] = route.departureTime.split(':').map(Number);
+      const now = new Date();
+      const departure = new Date(now);
+      departure.setHours(h, m, 0, 0);
+      if (departure.getTime() <= now.getTime()) {
+          departure.setDate(departure.getDate() + 1);
+      }
+
+      const notifAt = new Date(departure.getTime() - minutes * 60 * 1000);
+      const msDelay = notifAt.getTime() - now.getTime();
+
+      if (msDelay < 0) {
+          alert(`이미 막차 ${minutes}분 이내예요! 🏃 지금 바로 출발하세요!`);
+          return;
+      }
+
+      const scheduleNotif = () => {
+          setTimeout(() => {
+              new Notification('찐막차 알림 🚌', {
+                  body: `출발 ${minutes}분 전이에요! 지금 출발하세요!`,
+                  icon: '/favicon.ico',
+                  tag: 'jjinmakcha-alert',
+                  requireInteraction: true,
+              });
+          }, msDelay);
+          const minLeft = Math.round(msDelay / 60000);
+          alert(`출발 ${minutes}분 전(${minLeft}분 후)에 알림을 드릴게요! 🔔`);
+      };
+
+      if (!('Notification' in window)) {
+          alert('이 브라우저는 알림을 지원하지 않아요.');
+          return;
+      }
+
+      if (Notification.permission === 'granted') {
+          scheduleNotif();
+      } else if (Notification.permission === 'denied') {
+          alert('알림이 차단되어 있어요. 브라우저 설정에서 알림을 허용해주세요.');
+      } else {
+          Notification.requestPermission().then(perm => {
+              if (perm === 'granted') scheduleNotif();
+              else alert('알림 권한을 허용해야 알림을 받을 수 있어요.');
+          });
+      }
   };
 
   const handleBack = () => {
       if (appState === AppState.DETAILS) setAppState(AppState.RESULTS);
+      else if (appState === AppState.LDT_DETAIL) setAppState(AppState.RESULTS);
       else if (appState === AppState.RESULTS) setAppState(AppState.HOME);
       else if (appState === AppState.PLACE_DETAIL) {
           // If we came from Open Now Tab
@@ -355,8 +525,32 @@ const App: React.FC = () => {
       setIsEditingProfile(false);
   };
 
-  const toggleNotifications = () => {
-      setNotificationsEnabled(!notificationsEnabled);
+  const toggleNotifications = async () => {
+      if (!notificationsEnabled) {
+          if (!('Notification' in window)) {
+              setNotificationsEnabled(true);
+              return;
+          }
+          if (Notification.permission === 'granted') {
+              setNotificationsEnabled(true);
+          } else if (Notification.permission === 'denied') {
+              alert('브라우저 알림이 차단되어 있어요. 브라우저 주소창 왼쪽 🔒 아이콘을 눌러 알림을 허용해주세요.');
+          } else {
+              const permission = await Notification.requestPermission();
+              if (permission === 'granted') {
+                  setNotificationsEnabled(true);
+                  new Notification('찐막차 알림 🚌', {
+                      body: '막차 알림이 켜졌어요! 막차 놓치지 않게 알려드릴게요.',
+                      icon: '/favicon.ico',
+                      tag: 'jjinmakcha-welcome',
+                  });
+              } else {
+                  alert('알림 권한을 허용해야 알림을 받을 수 있어요.');
+              }
+          }
+      } else {
+          setNotificationsEnabled(false);
+      }
   };
 
   // Calculate time remaining until departure with Fun Comments
@@ -535,8 +729,8 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {postcodeTarget && (
-        <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center p-4 backdrop-blur-md">
+      {postcodeTarget && postcodeTarget !== 'home' && (
+        <div className="absolute inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-md">
             <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl relative">
                 <div className="flex justify-between items-center p-4 border-b">
                     <h3 className="font-bold text-lg">주소 검색</h3>
@@ -549,6 +743,7 @@ const App: React.FC = () => {
                         onComplete={(data) => {
                             if (postcodeTarget === 'start') setStartLoc(data.address);
                             if (postcodeTarget === 'end') setEndLoc(data.address);
+                            if (postcodeTarget === 'home') setTempHomeAddress(data.address);
                             setPostcodeTarget(null);
                         }}
                         autoClose={false}
@@ -851,230 +1046,286 @@ const App: React.FC = () => {
   );
 
   const renderMyPage = () => (
-    <div className="flex flex-col h-full bg-gray-50 pb-20">
-        <header className="px-6 py-5 flex items-center bg-white sticky top-0 z-20 shadow-sm border-b border-gray-50">
-            <h2 className="text-2xl font-black text-gray-800">내 정보 🦄</h2>
+    <div className="flex flex-col h-full bg-gray-50 pb-20 relative">
+        {/* Header */}
+        <header className="px-5 py-4 bg-white sticky top-0 z-20 shadow-sm">
+            <h2 className="text-xl font-black text-gray-800">내 정보</h2>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Profile & Savings Dashboard */}
-            <div className="bg-gradient-to-br from-brandBlue to-blue-500 p-6 rounded-[2.5rem] shadow-xl text-white relative overflow-hidden group">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all"></div>
-                
-                {/* Edit Nickname Button */}
-                <button 
-                    onClick={() => { setIsEditingProfile(true); setTempNickname(nickname); }}
-                    className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-md transition-colors z-20"
-                >
-                    <Edit2 size={16} className="text-white" />
-                </button>
+        <div className="flex-1 overflow-y-auto">
+            {/* Profile Hero */}
+            <div className="bg-gradient-to-br from-brandBlue to-blue-500 px-5 py-8 relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 w-48 h-48 bg-white/10 rounded-full blur-3xl" />
+                <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-brandPink/20 rounded-full blur-2xl" />
 
-                <div className="flex items-center space-x-4 mb-6 relative z-10">
-                    <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center border-2 border-white/30 backdrop-blur-md">
-                        <User className="w-8 h-8 text-white" />
+                <div className="relative z-10 flex items-center gap-4">
+                    <div className="w-16 h-16 rounded-full bg-white/20 border-2 border-white/40 flex items-center justify-center shrink-0">
+                        <User size={32} className="text-white" />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                             <h3 className="text-2xl font-black">{nickname}</h3>
-                             <span className="text-[10px] bg-brandYellow text-gray-800 font-black px-2 py-0.5 rounded-full shadow-sm">LV. 3</span>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5">
+                            <h3 className="text-2xl font-black text-white truncate">{nickname}</h3>
+                            <span className="text-[10px] bg-brandYellow text-gray-800 font-black px-2 py-0.5 rounded-full shrink-0 shadow-sm">LV. 3</span>
                         </div>
-                        <p className="text-blue-100 text-sm font-medium">서울 마스터</p>
+                        <p className="text-blue-100 text-sm font-medium">서울 마스터 🏙️</p>
                     </div>
+                    <button
+                        onClick={() => { setIsEditingProfile(true); setTempNickname(nickname); }}
+                        className="p-2.5 bg-white/20 hover:bg-white/30 rounded-full backdrop-blur-md transition-colors shrink-0"
+                    >
+                        <Edit2 size={15} className="text-white" />
+                    </button>
                 </div>
-                
-                <div className="bg-black/20 rounded-2xl p-4 backdrop-blur-md border border-white/10">
+
+                {/* 절약 현황 */}
+                <div className="relative z-10 mt-5 bg-black/20 rounded-2xl p-4 border border-white/10 backdrop-blur-sm">
                     <div className="flex justify-between items-end mb-2">
-                        <p className="text-blue-100 text-xs font-bold">이번 달 절약 금액</p>
-                        <p className="text-2xl font-black">42,000원</p>
-                    </div>
-                    <div className="w-full bg-white/20 h-2 rounded-full overflow-hidden mb-2">
-                        <div className="bg-brandYellow h-full rounded-full w-[80%] shadow-[0_0_10px_rgba(255,217,61,0.5)]"></div>
-                    </div>
-                    <div className="flex justify-between items-center text-[10px] font-bold text-blue-100">
-                        <span className="flex items-center gap-1"><TrendingUp size={10} /> 목표: 치킨 먹기</span>
-                        <span>8,000원 남음</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Grid Layout for Settings */}
-            <div className="grid grid-cols-2 gap-4">
-                 {/* Notification Settings - UPDATED DESIGN */}
-                <div 
-                    onClick={toggleNotifications}
-                    className={`p-5 rounded-[2rem] shadow-sm border transition-all cursor-pointer active:scale-95 h-36 flex flex-col justify-between group ${notificationsEnabled ? 'bg-white border-brandYellow ring-2 ring-brandYellow/20' : 'bg-gray-50 border-gray-200'}`}
-                >
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 transition-colors ${notificationsEnabled ? 'bg-brandYellow text-white' : 'bg-gray-200 text-gray-400'}`}>
-                        {notificationsEnabled ? <BellRing size={20} className="fill-white" /> : <Bell size={20} />}
-                    </div>
-                    <div>
-                        <div className="flex justify-between items-center mb-1">
-                            <h3 className={`font-bold transition-colors ${notificationsEnabled ? 'text-gray-900' : 'text-gray-500'}`}>알림 {notificationsEnabled ? 'ON' : 'OFF'}</h3>
-                            <div className={`w-10 h-6 rounded-full p-1 transition-colors flex items-center ${notificationsEnabled ? 'bg-brandYellow justify-end' : 'bg-gray-300 justify-start'}`}>
-                                <div className="w-4 h-4 bg-white rounded-full shadow-sm"></div>
-                            </div>
+                        <div>
+                            <p className="text-blue-100 text-[10px] font-bold mb-0.5">이번 달 절약 금액</p>
+                            <p className="text-2xl font-black text-white">42,000원</p>
                         </div>
-                        <p className="text-[10px] text-gray-400 font-bold">막차 & 할인 정보</p>
+                        <div className="text-right">
+                            <p className="text-blue-100 text-[10px] font-bold mb-0.5">목표까지 남은 금액</p>
+                            <p className="text-brandYellow font-black text-sm">8,000원</p>
+                        </div>
                     </div>
-                </div>
-
-                {/* Safe Return Settings */}
-                <div 
-                    onClick={() => setIsEditingPhone(true)}
-                    className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between h-36 cursor-pointer active:scale-95 transition-transform"
-                >
-                    <div className="w-10 h-10 rounded-full bg-brandPink/10 text-brandPink flex items-center justify-center mb-2">
-                        <Shield size={20} />
+                    <div className="w-full bg-white/20 h-2 rounded-full overflow-hidden mb-1.5">
+                        <div className="bg-brandYellow h-full rounded-full w-[84%] shadow-[0_0_8px_rgba(255,217,61,0.5)] transition-all" />
                     </div>
-                    <div>
-                        <h3 className="font-bold text-gray-800 mb-1">안심 귀가</h3>
-                        <p className="text-[10px] text-gray-400 font-bold truncate">{emergencyPhone === '010-xxxx-xxxx' ? '비상 연락처 설정' : emergencyPhone}</p>
-                    </div>
-                </div>
-
-                {/* Walk Preference */}
-                <div 
-                    onClick={() => setWalkPreference(walkPreference === 'CHEAP' ? 'SHORT' : 'CHEAP')}
-                    className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between h-36 cursor-pointer active:scale-95 transition-transform"
-                >
-                     <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10 text-brandMint' : 'bg-brandPurple/10 text-brandPurple'}`}>
-                        <Footprints size={20} />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-gray-800 mb-1">이동 취향</h3>
-                        <p className="text-[10px] text-gray-400 font-bold">
-                            {walkPreference === 'CHEAP' ? '💸 비용 절약형' : '🚶 최소 도보형'}
-                        </p>
-                    </div>
-                </div>
-
-                 {/* Home Address */}
-                 <div 
-                    onClick={() => { setIsEditingHome(true); setTempHomeAddress(homeAddress); }}
-                    className="bg-white p-5 rounded-[2rem] shadow-sm border border-gray-100 flex flex-col justify-between h-36 cursor-pointer active:scale-95 transition-transform"
-                >
-                    <div className="w-10 h-10 rounded-full bg-blue-50 text-brandBlue flex items-center justify-center mb-2">
-                        <Home size={20} />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-gray-800 mb-1">우리 집</h3>
-                        <p className="text-[10px] text-gray-400 font-bold truncate">{homeAddress || "설정 필요"}</p>
-                    </div>
+                    <p className="text-blue-100 text-[10px] font-bold flex items-center gap-1">
+                        <TrendingUp size={10} /> 목표: 치킨 먹기 🍗
+                    </p>
                 </div>
             </div>
 
-            {/* Editing Modals/Inputs */}
-            {isEditingProfile && (
-                <div className="bg-white p-5 rounded-[2rem] border-2 border-brandBlue/20 shadow-lg animate-float">
-                    <p className="text-sm font-bold text-gray-500 mb-2">✏️ 닉네임을 수정해주세요</p>
-                    <input 
-                        type="text" 
+            <div className="p-4 space-y-3">
+                {/* 나의 설정 */}
+                <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
+                    <div className="px-5 pt-4 pb-2">
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">나의 설정</p>
+                    </div>
+
+                    {/* 우리 집 */}
+                    <button
+                        onClick={() => { setIsEditingHome(true); setTempHomeAddress(homeAddress); }}
+                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
+                    >
+                        <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                            <Home size={18} className="text-brandBlue" />
+                        </div>
+                        <div className="flex-1 text-left min-w-0">
+                            <p className="font-bold text-gray-800 text-sm">우리 집 주소</p>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                                {homeAddress || '등록하면 한 번에 집으로! 🏠'}
+                            </p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+
+                    <div className="mx-5 h-px bg-gray-50" />
+
+                    {/* 이동 취향 */}
+                    <button
+                        onClick={() => setWalkPreference(walkPreference === 'CHEAP' ? 'SHORT' : 'CHEAP')}
+                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
+                    >
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10' : 'bg-purple-50'}`}>
+                            <Footprints size={18} className={walkPreference === 'CHEAP' ? 'text-brandMint' : 'text-purple-500'} />
+                        </div>
+                        <div className="flex-1 text-left">
+                            <p className="font-bold text-gray-800 text-sm">이동 취향</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                {walkPreference === 'CHEAP' ? '💸 비용 절약형' : '🚶 최소 도보형'}
+                            </p>
+                        </div>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10 text-brandMint' : 'bg-purple-50 text-purple-500'}`}>
+                            탭으로 전환
+                        </span>
+                    </button>
+
+                    <div className="mx-5 h-px bg-gray-50" />
+
+                    {/* 안심 귀가 */}
+                    <button
+                        onClick={() => { setIsEditingPhone(true); setTempPhone(emergencyPhone === '010-xxxx-xxxx' ? '' : emergencyPhone); }}
+                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
+                    >
+                        <div className="w-10 h-10 rounded-2xl bg-pink-50 flex items-center justify-center shrink-0">
+                            <Shield size={18} className="text-brandPink" />
+                        </div>
+                        <div className="flex-1 text-left min-w-0">
+                            <p className="font-bold text-gray-800 text-sm">안심 귀가</p>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                                {emergencyPhone === '010-xxxx-xxxx' ? '비상 연락처를 등록해주세요' : emergencyPhone}
+                            </p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+                    <div className="pb-2" />
+                </div>
+
+                {/* 알림 설정 */}
+                <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
+                    <div className="px-5 pt-4 pb-2">
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">알림 설정</p>
+                    </div>
+                    <div
+                        onClick={toggleNotifications}
+                        className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-gray-50 transition-colors active:bg-gray-100"
+                    >
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-colors ${notificationsEnabled ? 'bg-brandYellow/15' : 'bg-gray-100'}`}>
+                            {notificationsEnabled
+                                ? <BellRing size={18} className="text-brandYellow" />
+                                : <Bell size={18} className="text-gray-400" />}
+                        </div>
+                        <div className="flex-1">
+                            <p className="font-bold text-gray-800 text-sm">막차 알림</p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                                {notificationsEnabled ? '알림이 켜져 있어요' : '알림이 꺼져 있어요'}
+                            </p>
+                        </div>
+                        <div className={`w-12 h-6 rounded-full p-1 transition-all flex items-center shrink-0 ${notificationsEnabled ? 'bg-brandYellow justify-end' : 'bg-gray-200 justify-start'}`}>
+                            <div className="w-4 h-4 bg-white rounded-full shadow-sm" />
+                        </div>
+                    </div>
+                    <div className="pb-2" />
+                </div>
+
+                {/* 앱 정보 */}
+                <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
+                    <div className="px-5 pt-4 pb-2">
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">앱 정보</p>
+                    </div>
+                    <button className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
+                        <div className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center shrink-0">
+                            <FileText size={18} className="text-gray-400" />
+                        </div>
+                        <div className="flex-1 text-left">
+                            <p className="font-bold text-gray-800 text-sm">공지사항</p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+                    <div className="mx-5 h-px bg-gray-50" />
+                    <button className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
+                        <div className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center shrink-0">
+                            <Phone size={18} className="text-gray-400" />
+                        </div>
+                        <div className="flex-1 text-left">
+                            <p className="font-bold text-gray-800 text-sm">고객센터</p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+                    <div className="pb-2" />
+                </div>
+
+                {/* 버전 */}
+                <div className="text-center py-4">
+                    <p className="text-xs text-gray-400 font-bold">찐막차 v2.1.0</p>
+                    <p className="text-[10px] text-gray-300 mt-0.5">Designed for Safe & Fun Nightlife 🌙</p>
+                </div>
+            </div>
+        </div>
+
+        {/* 닉네임 편집 모달 */}
+        {isEditingProfile && (
+            <div className="absolute inset-0 z-[60] bg-black/60 flex items-end backdrop-blur-sm">
+                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                    <p className="text-lg font-black text-gray-800 mb-4">닉네임 변경</p>
+                    <input
+                        type="text"
                         value={tempNickname}
                         onChange={(e) => setTempNickname(e.target.value)}
-                        placeholder="새 닉네임"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-brandBlue font-bold text-gray-800"
+                        placeholder="새 닉네임 (최대 10자)"
+                        className="w-full bg-gray-50 border-2 border-transparent focus:border-brandBlue rounded-2xl px-5 py-4 mb-4 focus:outline-none font-bold text-gray-800"
                         autoFocus
                         maxLength={10}
                     />
-                    <div className="flex gap-2">
-                        <button onClick={() => setIsEditingProfile(false)} className="flex-1 py-3 text-gray-500 bg-gray-100 rounded-xl font-bold">취소</button>
-                        <button onClick={saveNickname} className="flex-1 py-3 text-white bg-brandBlue rounded-xl font-bold shadow-md shadow-blue-200">저장</button>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsEditingProfile(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
+                        <button onClick={saveNickname} className="flex-1 py-4 text-white bg-brandBlue rounded-2xl font-black shadow-md shadow-blue-200">저장</button>
                     </div>
                 </div>
-            )}
+            </div>
+        )}
 
-            {isEditingHome && (
-                <div className="bg-white p-5 rounded-[2rem] border-2 border-brandBlue/20 shadow-lg animate-float">
-                    <p className="text-sm font-bold text-gray-500 mb-2">🏠 도로명 주소를 입력해주세요</p>
-                    <input 
-                        type="text" 
-                        value={tempHomeAddress}
-                        onChange={(e) => setTempHomeAddress(e.target.value)}
-                        placeholder="예: 강남대로 123"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-brandBlue font-bold"
-                        autoFocus
-                    />
-                    <div className="flex gap-2">
-                        <button onClick={() => setIsEditingHome(false)} className="flex-1 py-3 text-gray-500 bg-gray-100 rounded-xl font-bold">취소</button>
-                        <button onClick={saveHomeAddress} className="flex-1 py-3 text-white bg-brandBlue rounded-xl font-bold shadow-md shadow-blue-200">저장</button>
+        {/* 집 주소 편집 모달 */}
+        {isEditingHome && (
+            <div className="absolute inset-0 z-[60] bg-black/60 flex items-end backdrop-blur-sm">
+                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                    <p className="text-lg font-black text-gray-800 mb-1">우리 집 주소</p>
+                    <p className="text-sm text-gray-400 mb-4">등록하면 도착지로 바로 설정할 수 있어요 🏠</p>
+                    <div className="relative mb-4">
+                        <input
+                            type="text"
+                            value={tempHomeAddress}
+                            onChange={(e) => setTempHomeAddress(e.target.value)}
+                            placeholder="예: 서울 강남구 강남대로 123"
+                            className="w-full bg-gray-50 border-2 border-transparent focus:border-brandBlue rounded-2xl px-5 py-4 pr-[7.5rem] focus:outline-none font-bold"
+                        />
+                        <button
+                            onClick={() => setPostcodeTarget('home')}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-brandBlue text-white text-xs font-black px-3 py-2 rounded-xl shadow-sm active:scale-95 transition-transform"
+                        >
+                            <Search size={13} />
+                            주소 검색
+                        </button>
+                    </div>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsEditingHome(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
+                        <button onClick={saveHomeAddress} className="flex-1 py-4 text-white bg-brandBlue rounded-2xl font-black shadow-md shadow-blue-200">저장</button>
                     </div>
                 </div>
-            )}
+            </div>
+        )}
 
-            {isEditingPhone && (
-                <div className="bg-white p-5 rounded-[2rem] border-2 border-brandPink/20 shadow-lg animate-float">
-                    <p className="text-sm font-bold text-gray-500 mb-2">🛡️ 비상 연락처를 입력해주세요</p>
-                    <input 
-                        type="tel" 
+        {/* 비상 연락처 편집 모달 */}
+        {isEditingPhone && (
+            <div className="absolute inset-0 z-[60] bg-black/60 flex items-end backdrop-blur-sm">
+                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                    <p className="text-lg font-black text-gray-800 mb-1">안심 귀가 연락처</p>
+                    <p className="text-sm text-gray-400 mb-4">귀가 완료 시 보호자에게 알림을 보낼 수 있어요 🛡️</p>
+                    <input
+                        type="tel"
                         value={tempPhone}
                         onChange={(e) => setTempPhone(e.target.value)}
                         placeholder="010-0000-0000"
-                        className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-3 focus:outline-none focus:border-brandPink font-bold"
+                        className="w-full bg-gray-50 border-2 border-transparent focus:border-brandPink rounded-2xl px-5 py-4 mb-4 focus:outline-none font-bold"
                         autoFocus
                     />
-                    <div className="flex gap-2">
-                        <button onClick={() => setIsEditingPhone(false)} className="flex-1 py-3 text-gray-500 bg-gray-100 rounded-xl font-bold">취소</button>
-                        <button onClick={saveEmergencyPhone} className="flex-1 py-3 text-white bg-brandPink rounded-xl font-bold shadow-md shadow-red-200">저장</button>
+                    <div className="flex gap-3">
+                        <button onClick={() => setIsEditingPhone(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
+                        <button onClick={saveEmergencyPhone} className="flex-1 py-4 text-white bg-brandPink rounded-2xl font-black shadow-md shadow-red-200">저장</button>
                     </div>
                 </div>
-            )}
+            </div>
+        )}
 
-            {/* Payment Method - UPDATED DESIGN */}
-            <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-gray-100">
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                        <CreditCard className="w-5 h-5 text-gray-400" />
-                        결제 수단
-                    </h3>
-                    <button className="text-xs font-bold text-brandBlue bg-blue-50 px-3 py-1.5 rounded-full hover:bg-blue-100 transition-colors">
-                        관리
-                    </button>
-                </div>
-                
-                <div className="space-y-3">
-                    {/* Existing Card */}
-                    <div className="bg-[#FEE500] p-4 rounded-2xl flex items-center justify-between shadow-sm border border-yellow-400/20 group cursor-pointer hover:shadow-md transition-all">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-black/10 p-2 rounded-xl group-hover:scale-110 transition-transform">
-                                <span className="font-black text-[10px] text-gray-800">PAY</span>
-                            </div>
-                            <div>
-                                <span className="font-bold text-gray-900 text-sm block">카카오페이</span>
-                                <span className="text-[10px] text-gray-600 font-medium">기본 결제 수단</span>
-                            </div>
-                        </div>
-                        <div className="w-6 h-6 rounded-full bg-black/20 flex items-center justify-center">
-                             <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
-                        </div>
+        {/* 주소 검색 팝업 (MY_PAGE) */}
+        {postcodeTarget === 'home' && (
+            <div className="absolute inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-md">
+                <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl relative">
+                    <div className="flex justify-between items-center p-4 border-b">
+                        <h3 className="font-bold text-lg">주소 검색</h3>
+                        <button onClick={() => setPostcodeTarget(null)} className="p-1 hover:bg-gray-100 rounded-full">
+                            <X size={20} />
+                        </button>
                     </div>
-
-                    {/* Add Button */}
-                    <button className="w-full py-4 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-bold hover:border-brandBlue hover:text-brandBlue hover:bg-blue-50 transition-all flex items-center justify-center gap-2 group">
-                        <div className="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <Plus size={14} strokeWidth={3} />
-                        </div>
-                        <span>새 카드 추가하기</span>
-                    </button>
+                    <div className="h-[400px] overflow-y-auto">
+                        <DaumPostcode
+                            onComplete={(data) => {
+                                setTempHomeAddress(data.address);
+                                setPostcodeTarget(null);
+                                setIsEditingHome(true);
+                            }}
+                            autoClose={false}
+                        />
+                    </div>
                 </div>
             </div>
-
-            {/* Footer Links */}
-            <div className="space-y-2">
-                 <button className="w-full bg-white p-5 rounded-[2rem] border border-gray-100 flex justify-between items-center text-gray-600 font-bold hover:bg-gray-50 transition-colors">
-                     <span className="flex items-center gap-2"><FileText size={16} className="text-gray-400"/> 공지사항</span>
-                     <ChevronRight size={16} className="text-gray-400"/>
-                 </button>
-                 <button className="w-full bg-white p-5 rounded-[2rem] border border-gray-100 flex justify-between items-center text-gray-600 font-bold hover:bg-gray-50 transition-colors">
-                     <span className="flex items-center gap-2"><Phone size={16} className="text-gray-400"/> 고객센터</span>
-                     <ChevronRight size={16} className="text-gray-400"/>
-                 </button>
-            </div>
-
-            <div className="text-center py-6">
-                <p className="text-xs text-gray-400 font-bold mb-1">찐막차 v2.1.0</p>
-                <p className="text-[10px] text-gray-300">Designed for Safe & Fun Nightlife</p>
-            </div>
-        </div>
+        )}
     </div>
   );
 
@@ -1093,20 +1344,187 @@ const App: React.FC = () => {
 
   const renderResults = () => (
     <div className="flex flex-col h-full bg-gray-50 pb-20">
-        <header className="px-6 py-5 flex items-center bg-white/80 backdrop-blur-md sticky top-0 z-20 shadow-sm">
-            <button onClick={handleBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-800 rounded-full hover:bg-gray-100 transition-colors">
-                <ChevronLeft className="w-8 h-8" />
+        {/* Header: 출발지 → 도착지 + 필터 버튼 */}
+        <header className="px-4 py-3 flex items-center gap-2 bg-white/90 backdrop-blur-md sticky top-0 z-20 shadow-sm">
+            <button onClick={handleBack} className="p-2 -ml-1 text-gray-400 hover:text-gray-800 rounded-full hover:bg-gray-100 transition-colors shrink-0">
+                <ChevronLeft className="w-6 h-6" />
             </button>
-            <h2 className="ml-2 text-2xl font-black text-gray-800">추천 경로 🚕🚌</h2>
+            <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide flex items-center gap-1">
+                    <span className="bg-orange-100 text-orange-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">🚕 하이브리드 추천 중</span>
+                </p>
+                <h2 className="text-sm font-black text-gray-800 truncate flex items-center gap-1">
+                    <span className="truncate max-w-[100px]">{startLoc}</span>
+                    <ArrowRight size={11} className="shrink-0 text-gray-400" />
+                    <span className="truncate max-w-[100px]">{endLoc}</span>
+                </h2>
+            </div>
+            <button
+                onClick={() => setFilterOpen((v: boolean) => !v)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-black transition-colors ${filterOpen || filterMaxTaxi < 99999 || filterMaxWalk < 99 || filterMaxTransfer < 9 || filterDepartureTime || filterExcludeTaxi ? 'bg-brandBlue text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+                <Settings size={13} />
+                필터{(filterMaxTaxi < 99999 || filterMaxWalk < 99 || filterMaxTransfer < 9 || filterDepartureTime || filterExcludeTaxi) ? ' ●' : ''}
+            </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-5 space-y-6">
-            <div className="bg-white rounded-3xl p-6 border border-gray-100 text-center shadow-lg">
-               <h3 className="text-gray-400 text-sm mb-2 font-bold">택시만 타면 이만큼 깨져요 💸</h3>
-               <p className="text-4xl font-black text-brandPink line-through decoration-gray-300 decoration-4">{fullTaxiCost.toLocaleString()}원</p>
+        {/* 필터 패널 */}
+        {filterOpen && (
+            <div className="bg-white border-b border-gray-100 px-4 pt-4 pb-3 space-y-3 shadow-sm">
+                {/* 출발 시간 */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-600">출발 시간</span>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="time"
+                            value={pendingFilters.departureTime}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                                setPendingFilters({ ...pendingFilters, departureTime: e.target.value })}
+                            className="text-xs font-bold text-gray-800 border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:border-brandBlue"
+                        />
+                        {pendingFilters.departureTime && (
+                            <button onClick={() => setPendingFilters({ ...pendingFilters, departureTime: '' })} className="text-gray-400 hover:text-gray-600">
+                                <X size={14} />
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {/* 최대 택시비 */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-600">최대 택시비</span>
+                    <button
+                        onClick={() => { setFilterPickerTemp(pendingFilters.maxTaxi); setFilterModalType('taxi'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full text-xs font-black text-gray-700 hover:bg-gray-200 transition-colors"
+                    >
+                        {pendingFilters.maxTaxi >= 99999 ? '제한없음' : `${pendingFilters.maxTaxi.toLocaleString()}원 이하`}
+                        <ChevronRight size={12} className="text-gray-400" />
+                    </button>
+                </div>
+                {/* 최대 도보 시간 */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-600">최대 도보</span>
+                    <button
+                        onClick={() => { setFilterPickerTemp(pendingFilters.maxWalk); setFilterModalType('walk'); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full text-xs font-black text-gray-700 hover:bg-gray-200 transition-colors"
+                    >
+                        {pendingFilters.maxWalk >= 99 ? '제한없음' : `${pendingFilters.maxWalk}분 이하`}
+                        <ChevronRight size={12} className="text-gray-400" />
+                    </button>
+                </div>
+                {/* 최대 환승 횟수 */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-600">최대 환승</span>
+                    <div className="flex gap-1.5">
+                        {[9, 0, 1, 2, 3].map(v => (
+                            <button key={v}
+                                onClick={() => setPendingFilters({ ...pendingFilters, maxTransfer: v })}
+                                className={`text-[11px] font-black px-2.5 py-1 rounded-full transition-colors ${pendingFilters.maxTransfer === v ? 'bg-brandBlue text-white' : 'bg-gray-100 text-gray-600'}`}>
+                                {v === 9 ? '전체' : v === 0 ? '직통' : `${v}회`}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {/* 택시 제외 */}
+                <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-gray-600">택시 제외</span>
+                    <button
+                        onClick={() => setPendingFilters({ ...pendingFilters, excludeTaxi: !pendingFilters.excludeTaxi })}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${pendingFilters.excludeTaxi ? 'bg-brandBlue' : 'bg-gray-200'}`}
+                    >
+                        <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${pendingFilters.excludeTaxi ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                </div>
+                {/* 초기화 / 적용 버튼 */}
+                <div className="flex gap-2 pt-1">
+                    <button
+                        onClick={() => setPendingFilters({ departureTime: '', maxTaxi: 99999, maxWalk: 99, maxTransfer: 9, excludeTaxi: false })}
+                        className="flex-1 py-2.5 rounded-2xl bg-gray-100 text-gray-500 font-black text-sm"
+                    >초기화</button>
+                    <button
+                        onClick={handleApplyFilters}
+                        disabled={isRefetchingRoutes}
+                        className="flex-2 px-6 py-2.5 rounded-2xl bg-brandBlue text-white font-black text-sm shadow-md shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-60"
+                    >
+                        {isRefetchingRoutes
+                            ? <><div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />경로 탐색 중</>
+                            : '적용'}
+                    </button>
+                </div>
             </div>
+        )}
 
-            {routes.map((route, index) => {
+        {/* 재조회 오류 배너 */}
+        {error && appState === AppState.RESULTS && (
+            <div className="mx-4 mt-3 bg-red-50 border border-red-100 rounded-2xl px-4 py-3 flex items-start gap-2">
+                <span className="text-red-400 shrink-0 mt-0.5">⚠️</span>
+                <div className="flex-1 min-w-0">
+                    <p className="text-red-600 text-xs font-black">{error}</p>
+                </div>
+                <button onClick={() => setError('')} className="text-red-300 hover:text-red-400 shrink-0">
+                    <X size={14} />
+                </button>
+            </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {/* 오늘의 찐막차 배너 — 히든 처리 */}
+            <div className="hidden">
+            <div
+                onClick={() => ldtResult && setAppState(AppState.LDT_DETAIL)}
+                className={`rounded-3xl overflow-hidden shadow-lg relative cursor-pointer active:scale-[0.98] transition-transform ${ldtResult?.routeExistsNow === false ? 'bg-gray-800' : 'bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]'}`}
+            >
+                <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 80% 20%, #f72585 0%, transparent 60%)' }} />
+                <div className="relative p-5">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-[11px] font-black text-white/60 uppercase tracking-widest">오늘의 찐막차</span>
+                        {ldtResult && <ChevronRight size={16} className="text-white/40" />}
+                    </div>
+                    {ldtLoading && !ldtResult ? (
+                        <div className="flex items-center gap-3 py-2">
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span className="text-white/60 text-sm font-bold">막차 시각 계산 중...</span>
+                        </div>
+                    ) : ldtResult?.routeExistsNow === false ? (
+                        <div>
+                            <p className="text-2xl font-black text-white mb-1">지금은 귀가 경로 없음</p>
+                            <p className="text-white/50 text-xs font-bold">택시 이용을 고려해보세요</p>
+                        </div>
+                    ) : ldtResult ? (
+                        <div>
+                            <p className="text-5xl font-black text-white tracking-tight mb-1">{ldtResult.latestDepartureTime}</p>
+                            <p className="text-white/60 text-xs font-bold mb-1">
+                                {ldtResult.reachedSearchLimit
+                                    ? '심야버스 운행 중 · 새벽 04시까지 귀가 가능'
+                                    : '대중교통+택시로 귀가 가능한 마지막 출발 시각'}
+                            </p>
+                            <p className="text-white/40 text-xs font-bold">
+                                {ldtResult.remainingMinutes > 0
+                                    ? `지금부터 ${ldtResult.remainingMinutes >= 60 ? `${Math.floor(ldtResult.remainingMinutes / 60)}시간 ${ldtResult.remainingMinutes % 60}분` : `${ldtResult.remainingMinutes}분`} 남음`
+                                    : '막차 시각이 지났어요'}
+                            </p>
+                            {ldtResult.hybridBonus && ldtResult.hybridBonus > 0 && (
+                                <div className="mt-3 bg-white/10 rounded-2xl px-3 py-2 flex items-center gap-2">
+                                    <Car size={13} className="text-yellow-300 shrink-0" />
+                                    <span className="text-yellow-300 text-xs font-black">
+                                        택시 첫 구간 이용 시 +{ldtResult.hybridBonus}분 더 가능
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <p className="text-white/40 text-sm font-bold py-2">검색 후 표시됩니다</p>
+                    )}
+                </div>
+            </div>
+            </div>{/* 오늘의 찐막차 히든 끝 */}
+
+            {filteredRoutes.length === 0 && routes.length > 0 && (
+                <div className="bg-white rounded-2xl p-5 text-center shadow-sm border border-gray-100">
+                    <p className="text-gray-500 font-bold text-sm">필터 조건에 맞는 경로가 없어요</p>
+                    <button onClick={() => { setFilterMaxTaxi(99999); setFilterMaxWalk(99); setFilterMaxTransfer(9); setFilterExcludeTaxi(false); }} className="mt-2 text-brandBlue text-xs font-black">필터 초기화</button>
+                </div>
+            )}
+            {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index);
                 const arrDate = new Date(Date.now() + route.totalDuration * 60000);
                 const arrH = arrDate.getHours();
@@ -1115,69 +1533,90 @@ const App: React.FC = () => {
                 const durStr = route.totalDuration >= 60
                     ? `${Math.floor(route.totalDuration / 60)}시간 ${route.totalDuration % 60 > 0 ? `${route.totalDuration % 60}분` : ''}`
                     : `${route.totalDuration}분`;
-                
+
+                const accentColors = ['#3B82F6', '#06D6A0', '#8B5CF6'];
+                const accent = accentColors[index] || '#3B82F6';
+
                 return (
-                    <div 
+                    <div
                         key={route.id}
                         onClick={() => handleSelectRoute(route)}
-                        className="bg-white rounded-[2rem] overflow-hidden border border-gray-100 hover:border-brandBlue transition-all cursor-pointer group shadow-xl hover:-translate-y-1 relative"
+                        className="bg-white rounded-[2rem] overflow-hidden border-l-4 border border-gray-100 cursor-pointer shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all relative"
+                        style={{ borderLeftColor: accent }}
                     >
-                        <div className="p-6">
-                            <div className="flex justify-between items-start mb-4">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="bg-brandBlue text-white text-[10px] font-black px-2 py-0.5 rounded-full">추천 {index + 1}</span>
-                                    </div>
-                                    <h3 className="text-xl font-black text-gray-800 group-hover:text-brandBlue transition-colors">{route.name}</h3>
-                                    <p className="text-sm text-gray-500 mt-1 font-medium">
-                                        🚏 환승: <span className="text-gray-800 font-bold">{route.transferPoint}</span>
-                                    </p>
+                        <div className="p-5">
+                            {/* 카드 헤더: 배지 + 벨 */}
+                            <div className="flex justify-between items-center mb-4">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span
+                                        className="text-white text-[11px] font-black px-3 py-1 rounded-full shadow-sm"
+                                        style={{ backgroundColor: accent }}
+                                    >
+                                        {route.routeLabel ?? `추천 ${index + 1}`}
+                                    </span>
+                                    {route.timeSavedByTaxi != null && route.timeSavedByTaxi > 0 && (
+                                        <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-orange-100 text-orange-500 border border-orange-200">
+                                            🚕 {route.timeSavedByTaxi}분 단축
+                                        </span>
+                                    )}
+                                    <span className="text-xs font-bold text-gray-400">
+                                        🚏 {route.transferPoint}
+                                    </span>
                                 </div>
-                                <div className="flex flex-col items-end gap-2">
-                                     <button 
-                                        onClick={(e) => handleOpenNotificationModal(e, route.id)}
-                                        className="p-2 bg-gray-50 text-gray-400 hover:bg-brandBlue hover:text-white rounded-full transition-colors active:scale-95"
-                                     >
-                                         <BellRing size={20} />
-                                     </button>
-                                    <div className="bg-brandMint/10 text-brandMint px-3 py-1.5 rounded-full font-bold text-sm border border-brandMint/20 whitespace-nowrap">
-                                        -{route.savedAmount.toLocaleString()}원
-                                    </div>
+                                <button
+                                    onClick={(e) => handleOpenNotificationModal(e, route.id)}
+                                    className="p-2 bg-gray-50 text-gray-400 hover:bg-brandBlue hover:text-white rounded-full transition-colors active:scale-95"
+                                >
+                                    <BellRing size={18} />
+                                </button>
+                            </div>
+
+                            {/* 시간 + 도착 */}
+                            <div className="flex items-end justify-between mb-3">
+                                <div>
+                                    <p className="text-[10px] text-gray-400 font-bold mb-0.5">총 소요시간</p>
+                                    <p className="text-3xl font-black text-gray-900">{durStr}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-gray-400 font-bold mb-0.5">도착 예정</p>
+                                    <p className="text-lg font-black text-gray-700">{arrStr}</p>
                                 </div>
                             </div>
 
-                            {/* Play Time Badge with Fun Comment */}
-                            <div className={`mb-5 rounded-2xl p-4 flex items-center gap-3 ${urgent ? 'bg-red-50' : 'bg-blue-50'}`}>
-                                <div className={`p-2 rounded-full ${urgent ? 'bg-red-100' : 'bg-blue-100'}`}>
-                                    <Clock className={`w-5 h-5 ${urgent ? 'text-red-500' : 'text-brandBlue'}`} />
-                                </div>
-                                <div>
-                                    <p className="text-xs text-gray-500 font-bold">막차까지 <span className="text-gray-800">{timeText}</span> 남음</p>
-                                    <p className={`text-base font-black ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
-                                        "{comment}"
-                                    </p>
-                                </div>
+                            {/* 비용 */}
+                            <div className="flex flex-wrap items-center gap-2 mb-4">
+                                <span className="text-base font-black text-gray-800">{route.hybridTotalCost.toLocaleString()}원</span>
+                                {route.taxiWalkCost > 0 && (
+                                    <span className="bg-orange-50 text-orange-500 text-xs font-black px-2.5 py-1 rounded-full border border-orange-200">
+                                        🚕 택시 {route.taxiWalkCost.toLocaleString()}원 포함
+                                    </span>
+                                )}
+                                <span className="bg-brandMint/10 text-brandMint text-xs font-black px-2.5 py-1 rounded-full border border-brandMint/20">
+                                    택시 대비 -{route.savedAmount.toLocaleString()}원
+                                </span>
                             </div>
 
-                            {/* 총 소요시간 + 도착예정 + 비용 */}
-                            <div className="flex items-center gap-2 mb-4 flex-wrap">
-                                <span className="text-2xl font-black text-gray-800">{durStr}</span>
-                                <span className="text-gray-300 font-bold">|</span>
-                                <span className="text-sm text-gray-500 font-bold">{arrStr} 도착예정</span>
-                                <span className="text-gray-300 font-bold">|</span>
-                                <span className="text-sm font-black text-brandBlue">{route.totalCost.toLocaleString()}원</span>
-                            </div>
+                            {/* 택시 탑승 명분 메시지 */}
+                            {route.taxiJustification && (
+                                <div className={`rounded-xl px-3.5 py-2.5 mb-4 flex items-start gap-2 ${route.timeMode === 'night' ? 'bg-indigo-50 border border-indigo-100' : 'bg-amber-50 border border-amber-100'}`}>
+                                    <span className="text-base shrink-0 mt-0.5">{route.timeMode === 'night' ? '🌙' : '💡'}</span>
+                                    <p className={`text-xs font-bold leading-relaxed ${route.timeMode === 'night' ? 'text-indigo-700' : 'text-amber-700'}`}>
+                                        {route.taxiJustification}
+                                    </p>
+                                </div>
+                            )}
 
                             {/* 수단별 소요시간 바 */}
                             <div className="flex items-stretch rounded-xl overflow-hidden gap-px mb-4">
                                 {route.segments.map((seg, idx) => {
                                     const isSubway = seg.type === 'subway';
                                     const isBus = seg.type === 'bus';
-                                    const icon = isSubway ? '🚇' : isBus ? '🚌' : '🚶';
+                                    const isTaxi = seg.type === 'taxi';
+                                    const icon = isSubway ? '🚇' : isBus ? '🚌' : isTaxi ? '🚕' : '🚶';
                                     const showLabel = seg.durationMinutes >= 4;
                                     const isWalk = seg.type === 'walk';
 
-                                    const getSubwayColor = (name: string): string => {
+                                    const getSubwayColorLocal = (name: string): string => {
                                         const n = name || '';
                                         if (n.includes('1호선')) return '#0052A4';
                                         if (n.includes('2호선')) return '#00A84D';
@@ -1192,8 +1631,7 @@ const App: React.FC = () => {
                                         if (n.includes('분당') || n.includes('수인')) return '#F5A200';
                                         if (n.includes('경의') || n.includes('중앙')) return '#77C4A3';
                                         if (n.includes('경춘')) return '#0C8E72';
-                                        if (n.includes('경강')) return '#0065B3';
-                                        if (n.includes('공항')) return '#0065B3';
+                                        if (n.includes('경강') || n.includes('공항')) return '#0065B3';
                                         if (n.includes('GTX')) return '#9C4EA8';
                                         if (n.includes('용인')) return '#74C043';
                                         if (n.includes('의정부')) return '#C9AB8B';
@@ -1206,14 +1644,14 @@ const App: React.FC = () => {
 
                                     if (isSubway) console.log('subway lineName:', seg.lineName);
                                     const bgColor = isSubway
-                                        ? getSubwayColor(seg.lineName || '')
-                                        : isBus ? '#3B82F6' : '#D1D5DB';
+                                        ? getSubwayColorLocal(seg.lineName || '')
+                                        : isBus ? '#3B82F6' : isTaxi ? '#F97316' : '#D1D5DB';
                                     const textColor = isWalk ? '#6B7280' : '#ffffff';
 
                                     return (
                                         <div
                                             key={idx}
-                                            className="flex flex-row items-center justify-start gap-0.5 px-1.5 py-1.5 min-w-0 overflow-hidden"
+                                            className="flex flex-row items-center justify-start gap-0.5 px-1.5 py-2 min-w-0 overflow-hidden"
                                             style={{ flex: Math.max(seg.durationMinutes, 3), backgroundColor: bgColor }}
                                         >
                                             <span className="text-xs leading-none shrink-0">{icon}</span>
@@ -1227,33 +1665,46 @@ const App: React.FC = () => {
                                 })}
                             </div>
 
-                            {/* 막차 출발 */}
-                            <div>
-                                <p className="text-xs text-gray-400 mb-0.5 font-bold">막차 출발</p>
+                            {/* 긴박도 배너 */}
+                            <div className={`rounded-2xl px-4 py-3 flex items-center gap-3 mb-4 ${urgent ? 'bg-red-50' : 'bg-blue-50'}`}>
+                                <Clock className={`w-4 h-4 shrink-0 ${urgent ? 'text-red-500 animate-pulse' : 'text-brandBlue'}`} />
+                                <div className="min-w-0">
+                                    <p className="text-[11px] text-gray-500 font-bold">
+                                        막차까지 <span className={`font-black ${urgent ? 'text-red-500' : 'text-gray-800'}`}>{timeText}</span> 남음
+                                    </p>
+                                    <p className={`text-sm font-black truncate ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
+                                        "{comment}"
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* 막차 카운트다운 */}
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-[10px] text-gray-400 font-bold mb-1">막차 출발까지</p>
                                 <Countdown targetTimeStr={route.departureTime} />
                             </div>
                         </div>
                     </div>
                 );
             })}
-            
-            {/* Nearby Places Section in Search Results */}
+
+            {/* 근처 장소 */}
             {nearbyPlaces.length > 0 && (
-                <div className="pt-4">
-                    <div className="flex items-center gap-2 mb-4">
+                <div className="pt-2">
+                    <div className="flex items-center gap-2 mb-3">
                         <Beer className="text-brandYellow fill-brandYellow" size={20} />
-                        <h3 className="text-xl font-black text-gray-800">아쉬우면 한잔 더? 🍻</h3>
+                        <h3 className="text-lg font-black text-gray-800">아쉬우면 한잔 더? 🍻</h3>
                     </div>
-                    <div className="flex overflow-x-auto gap-4 pb-4 -mx-5 px-5 snap-x hide-scrollbar">
+                    <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 snap-x hide-scrollbar">
                         {nearbyPlaces.slice(0, 3).map((place) => (
-                            <div 
-                                key={place.id} 
+                            <div
+                                key={place.id}
                                 onClick={() => { setSelectedPlace(place); }}
-                                className="min-w-[200px] w-[200px] bg-white rounded-2xl overflow-hidden border border-gray-200 shadow-sm snap-center active:scale-95 transition-transform"
+                                className="min-w-[180px] w-[180px] bg-white rounded-2xl overflow-hidden border border-gray-200 shadow-sm snap-center active:scale-95 transition-transform"
                             >
                                 <div className="h-24 bg-gray-200 relative">
-                                    <img 
-                                        src={getSmartPlaceImage(place)} 
+                                    <img
+                                        src={getSmartPlaceImage(place)}
                                         alt={place.name}
                                         className="w-full h-full object-cover"
                                         loading="lazy"
@@ -1270,17 +1721,17 @@ const App: React.FC = () => {
                                             <span className="text-xs font-bold text-gray-700">{place.rating}</span>
                                         </div>
                                     </div>
-                                    <h4 className="font-bold text-gray-800 text-md truncate mb-0.5">{place.name}</h4>
+                                    <h4 className="font-bold text-gray-800 text-sm truncate mb-0.5">{place.name}</h4>
                                     <p className="text-[10px] text-gray-400 line-clamp-1">{place.address}</p>
                                 </div>
                             </div>
                         ))}
-                        <div 
+                        <div
                             onClick={() => setActiveTab('OPEN_NOW')}
-                            className="min-w-[100px] flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-bold gap-2 cursor-pointer hover:bg-gray-100 transition-colors"
+                            className="min-w-[80px] flex flex-col items-center justify-center bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 text-gray-400 font-bold gap-2 cursor-pointer hover:bg-gray-100 transition-colors"
                         >
                             <div className="p-2 bg-white rounded-full shadow-sm">
-                                <ArrowRight size={20} />
+                                <ArrowRight size={18} />
                             </div>
                             <span className="text-xs">더보기</span>
                         </div>
@@ -1289,14 +1740,13 @@ const App: React.FC = () => {
             )}
         </div>
 
-        {/* Notification Modal */}
         {isNotiModalOpen && (
             <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
                 <div className="bg-white w-full max-w-sm rounded-[2rem] p-6 animate-float shadow-2xl relative">
                     <div className="flex justify-between items-center mb-6">
                         <div>
                             <h3 className="text-2xl font-black text-gray-800">몇 분 전에 알려드릴까요? ⏰</h3>
-                            <p className="text-gray-400 text-sm font-bold">막차 놓치지 않게 챙겨드릴게요!</p>
+                            <p className="text-gray-400 text-sm font-bold">경로 출발 시간 기준으로 알려드려요!</p>
                         </div>
                         <button onClick={() => setIsNotiModalOpen(false)} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200">
                             <X size={20} />
@@ -1322,7 +1772,7 @@ const App: React.FC = () => {
                     </div>
                     <div className="text-center">
                         <p className="text-xs text-brandPink font-bold bg-red-50 inline-block px-3 py-1 rounded-full">
-                            ⚠️ 막차 시간 기준 알림입니다.
+                            ⚠️ 경로 출발 시간 기준 알림입니다.
                         </p>
                     </div>
                 </div>
@@ -1403,6 +1853,71 @@ const App: React.FC = () => {
                   </div>
               </div>
           )}
+
+        {/* 필터 슬라이더 모달 */}
+        {filterModalType && (() => {
+            const isTaxi = filterModalType === 'taxi';
+            const max = isTaxi ? 100000 : 60;
+            const step = isTaxi ? 1000 : 1;
+            const isUnlimited = isTaxi ? filterPickerTemp >= 100000 : filterPickerTemp >= 60;
+            const displayValue = isUnlimited
+                ? '제한없음'
+                : isTaxi
+                    ? `${filterPickerTemp.toLocaleString()}원`
+                    : `${filterPickerTemp}분`;
+            return (
+                <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-sm flex items-center justify-center px-6"
+                    onClick={() => setFilterModalType(null)}>
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl"
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <h3 className="text-lg font-black text-gray-900 text-center mb-1">
+                            {isTaxi ? '최대 택시비' : '최대 도보 시간'}
+                        </h3>
+                        {/* 현재 값 표시 */}
+                        <div className="flex items-center justify-center my-6">
+                            <span className={`text-4xl font-black tabular-nums ${isUnlimited ? 'text-gray-400' : 'text-brandBlue'}`}>
+                                {displayValue}
+                            </span>
+                        </div>
+                        {/* 슬라이더 */}
+                        <div className="px-2 mb-2">
+                            <input
+                                type="range"
+                                min={0}
+                                max={max}
+                                step={step}
+                                value={filterPickerTemp >= max ? max : filterPickerTemp}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                                    const v = Number(e.target.value);
+                                    setFilterPickerTemp(v >= max ? (isTaxi ? 99999 : 99) : v);
+                                }}
+                                className="w-full h-2 rounded-full appearance-none cursor-pointer accent-brandBlue"
+                                style={{ background: `linear-gradient(to right, #3B82F6 ${((filterPickerTemp >= max ? max : filterPickerTemp) / max) * 100}%, #E5E7EB ${((filterPickerTemp >= max ? max : filterPickerTemp) / max) * 100}%)` }}
+                            />
+                        </div>
+                        {/* 최솟값/최댓값 레이블 */}
+                        <div className="flex justify-between px-2 mb-6">
+                            <span className="text-xs font-bold text-gray-400">{isTaxi ? '0원' : '0분'}</span>
+                            <span className="text-xs font-bold text-gray-400">제한없음</span>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setFilterModalType(null)}
+                                className="flex-1 py-3 rounded-2xl bg-gray-100 text-gray-600 font-black text-sm"
+                            >취소</button>
+                            <button
+                                onClick={() => {
+                                    if (isTaxi) setPendingFilters({ ...pendingFilters, maxTaxi: filterPickerTemp });
+                                    else setPendingFilters({ ...pendingFilters, maxWalk: filterPickerTemp });
+                                    setFilterModalType(null);
+                                }}
+                                className="flex-1 py-3 rounded-2xl bg-brandBlue text-white font-black text-sm shadow-md shadow-blue-200"
+                            >확인</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        })()}
     </div>
   );
 
@@ -1445,7 +1960,7 @@ const App: React.FC = () => {
                  </div>
 
                  <div className="mt-4 bg-gray-50 p-4 rounded-3xl border border-gray-100">
-                     <CostChart taxiCost={fullTaxiCost} hybridCost={selectedRoute.totalCost} />
+                     <CostChart taxiCost={fullTaxiCost} hybridCost={selectedRoute.hybridTotalCost} />
                  </div>
              </div>
           </div>
@@ -1456,20 +1971,24 @@ const App: React.FC = () => {
                   {selectedRoute.segments.map((segment, idx) => (
                       <div key={idx} className="relative pl-8">
                           <div className={`absolute -left-[11px] top-0 w-5 h-5 rounded-full border-4 border-white shadow-sm flex items-center justify-center
-                              ${segment.type === 'walk' ? 'bg-gray-400' : 
-                                segment.type === 'bus' ? 'bg-brandBlue' : 
-                                segment.type === 'subway' ? 'bg-brandMint' : 'bg-brandYellow'}`}
+                              ${segment.type === 'walk' ? 'bg-gray-400' :
+                                segment.type === 'bus' ? 'bg-brandBlue' :
+                                segment.type === 'subway' ? 'bg-brandMint' :
+                                segment.type === 'taxi' ? 'bg-orange-400' : 'bg-brandYellow'}`}
                           >
                           </div>
-                          
-                          <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+
+                          <div className={`p-5 rounded-2xl shadow-sm border ${segment.type === 'taxi' ? 'bg-orange-50 border-orange-100' : 'bg-white border-gray-100'}`}>
                               <div className="flex justify-between items-start mb-2">
                                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase
-                                      ${segment.type === 'walk' ? 'bg-gray-100 text-gray-500' : 
-                                        segment.type === 'bus' ? 'bg-blue-50 text-brandBlue' : 
-                                        segment.type === 'subway' ? 'bg-green-50 text-brandMint' : 'bg-yellow-50 text-yellow-600'}`}>
-                                      {segment.type === 'taxi' ? '택시 (환승)' : 
-                                       segment.type === 'walk' ? '도보' : 
+                                      ${segment.type === 'walk' ? 'bg-gray-100 text-gray-500' :
+                                        segment.type === 'bus' ? 'bg-blue-50 text-brandBlue' :
+                                        segment.type === 'subway' ? 'bg-green-50 text-brandMint' :
+                                        segment.type === 'taxi' ? 'bg-orange-100 text-orange-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                                      {segment.type === 'taxi' ? '🚕 택시' :
+                                       segment.type === 'walk' ? '🚶 도보' :
+                                       segment.type === 'bus' ? `🚌 ${segment.lineName || '버스'}` :
+                                       segment.type === 'subway' ? `🚇 ${segment.lineName || '지하철'}` :
                                        segment.lineName || segment.type}
                                   </span>
                                   <span className="text-xs font-bold text-gray-400">{segment.durationMinutes}분</span>
@@ -1481,8 +2000,8 @@ const App: React.FC = () => {
                                       {segment.alightInstruction}
                                   </p>
                               )}
-                              {segment.cost > 0 && (
-                                  <p className="text-sm text-gray-500 font-medium mt-1">예상 비용: {segment.cost.toLocaleString()}원</p>
+                              {segment.type === 'taxi' && segment.cost > 0 && (
+                                  <p className="text-sm text-orange-500 font-black mt-2">예상 택시비 약 {segment.cost.toLocaleString()}원</p>
                               )}
                               {segment.type === 'subway' && segment.startName && (
                                   <RealTimeArrival
@@ -1536,6 +2055,118 @@ const App: React.FC = () => {
     );
   };
 
+  const renderLdtDetailPage = () => {
+    if (!ldtResult) return renderResults();
+    const baseMs = ldtResult.latestDepartureMs || Date.now();
+    return (
+      <div className="flex flex-col h-full bg-gray-50 pb-20">
+        <header className="px-4 py-3 flex items-center gap-2 bg-gradient-to-r from-[#1a1a2e] to-[#0f3460] sticky top-0 z-20 shadow-sm">
+          <button onClick={handleBack} className="p-2 -ml-1 text-white/60 hover:text-white rounded-full hover:bg-white/10 transition-colors shrink-0">
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] text-white/50 font-black uppercase tracking-widest">오늘의 찐막차</p>
+            <h2 className="text-xl font-black text-white">{ldtResult.latestDepartureTime} 출발</h2>
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-[10px] text-white/50 font-bold">남은 시간</p>
+            <p className="text-sm font-black text-white">
+              {ldtResult.remainingMinutes > 0
+                ? `${ldtResult.remainingMinutes >= 60 ? `${Math.floor(ldtResult.remainingMinutes / 60)}h ${ldtResult.remainingMinutes % 60}m` : `${ldtResult.remainingMinutes}분`}`
+                : '시간 지남'}
+            </p>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {ldtRoutesLoading && (
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <div className="w-8 h-8 border-2 border-gray-200 border-t-brandBlue rounded-full animate-spin" />
+              <span className="text-gray-400 text-sm font-bold">막차 경로 불러오는 중...</span>
+            </div>
+          )}
+          {!ldtRoutesLoading && ldtRoutes && ldtRoutes.length > 0 && ldtRoutes.map((route: HybridRoute, index: number) => {
+            const accentColors = ['#3B82F6', '#06D6A0', '#8B5CF6'];
+            const accent = accentColors[index] || '#3B82F6';
+            const arrDate = new Date(baseMs + route.totalDuration * 60000);
+            const arrH = arrDate.getHours();
+            const arrM = arrDate.getMinutes();
+            const arrStr = `${arrH < 12 ? '오전' : '오후'} ${arrH === 0 ? 12 : arrH > 12 ? arrH - 12 : arrH}:${arrM.toString().padStart(2, '0')}`;
+            const durStr = route.totalDuration >= 60
+              ? `${Math.floor(route.totalDuration / 60)}시간 ${route.totalDuration % 60 > 0 ? `${route.totalDuration % 60}분` : ''}`
+              : `${route.totalDuration}분`;
+            return (
+              <div key={route.id}
+                onClick={() => handleSelectRoute(route)}
+                className="bg-white rounded-[2rem] overflow-hidden border-l-4 border border-gray-100 cursor-pointer shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all"
+                style={{ borderLeftColor: accent }}>
+                <div className="p-5">
+                  <div className="flex items-center gap-2 flex-wrap mb-4">
+                    <span className="text-white text-[11px] font-black px-3 py-1 rounded-full shadow-sm" style={{ backgroundColor: accent }}>
+                      {route.routeLabel ?? `막차 ${index + 1}`}
+                    </span>
+                    {route.timeSavedByTaxi != null && route.timeSavedByTaxi > 0 && (
+                      <span className="text-[11px] font-black px-2.5 py-1 rounded-full bg-orange-100 text-orange-500 border border-orange-200">🚕 {route.timeSavedByTaxi}분 단축</span>
+                    )}
+                    <span className="text-xs font-bold text-gray-400">🚏 {route.transferPoint}</span>
+                  </div>
+                  <div className="flex items-end justify-between mb-3">
+                    <div>
+                      <p className="text-[10px] text-gray-400 font-bold mb-0.5">총 소요시간</p>
+                      <p className="text-3xl font-black text-gray-900">{durStr}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-gray-400 font-bold mb-0.5">도착 예정</p>
+                      <p className="text-lg font-black text-gray-700">{arrStr}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <span className="text-base font-black text-gray-800">{route.hybridTotalCost.toLocaleString()}원</span>
+                    {route.taxiWalkCost > 0 && (
+                      <span className="bg-orange-50 text-orange-500 text-xs font-black px-2.5 py-1 rounded-full border border-orange-200">
+                        🚕 택시 {route.taxiWalkCost.toLocaleString()}원 포함
+                      </span>
+                    )}
+                    <span className="bg-brandMint/10 text-brandMint text-xs font-black px-2.5 py-1 rounded-full border border-brandMint/20">
+                      택시 대비 -{route.savedAmount.toLocaleString()}원
+                    </span>
+                  </div>
+                  <div className="flex items-stretch rounded-xl overflow-hidden gap-px">
+                    {route.segments.map((seg, idx) => {
+                      const isSubway = seg.type === 'subway';
+                      const isBus = seg.type === 'bus';
+                      const isTaxi = seg.type === 'taxi';
+                      const icon = isSubway ? '🚇' : isBus ? '🚌' : isTaxi ? '🚕' : '🚶';
+                      const bgColor = isSubway ? '#0052A4' : isBus ? '#3B82F6' : isTaxi ? '#F97316' : '#D1D5DB';
+                      const textColor = seg.type === 'walk' ? '#6B7280' : '#ffffff';
+                      return (
+                        <div key={idx} className="flex flex-row items-center justify-start gap-0.5 px-1.5 py-2"
+                          style={{ flex: Math.max(seg.durationMinutes, 3), backgroundColor: bgColor }}>
+                          <span className="text-xs leading-none shrink-0">{icon}</span>
+                          {seg.durationMinutes >= 4 && (
+                            <span className="text-[10px] font-black whitespace-nowrap" style={{ color: textColor }}>{seg.durationMinutes}분</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {!ldtRoutesLoading && (!ldtRoutes || ldtRoutes.length === 0) && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <p className="text-4xl">🌙</p>
+              <p className="text-gray-500 font-black text-base">경로 정보를 불러올 수 없어요</p>
+              <p className="text-gray-400 text-xs font-bold text-center">해당 시각의 대중교통 경로가<br/>존재하지 않을 수 있어요</p>
+            </div>
+          )}
+          <p className="text-gray-400 text-[10px] text-center pb-4">ODsay 시간표 기준 · 실제 운행 상황에 따라 다를 수 있어요</p>
+        </div>
+      </div>
+    );
+  };
+
   const renderContent = () => {
       // Priority Check for Open Now Tab content
       if (activeTab === 'OPEN_NOW') return renderOpenNow();
@@ -1547,6 +2178,7 @@ const App: React.FC = () => {
                   case AppState.SEARCHING: return renderLoading();
                   case AppState.RESULTS: return renderResults();
                   case AppState.DETAILS: return renderDetails();
+                  case AppState.LDT_DETAIL: return renderLdtDetailPage();
                   case AppState.PLACE_DETAIL: return renderResults(); // Fallback if stuck
                   default: return renderHome();
               }

@@ -9,36 +9,75 @@ const getTmapKey = (): string => {
     return key;
 };
 
-// 주소에서 검색하기 좋은 키워드 추출
+// 주소에서 검색 후보 목록 생성 (다양한 변형 시도)
 const extractSearchKeyword = (input: string): string[] => {
-    const candidates: string[] = [input];
+    const s = input.trim();
+    const candidates: string[] = [s];
 
-    // 괄호 안 역명 추출: "경인로 지하 877 (동수역)" → "동수역"
-    const parenMatch = input.match(/\(([^)]+)\)/);
+    // 1. 괄호 안 역명: "경인로 지하 877 (동수역)" → "동수역"
+    const parenMatch = s.match(/\(([^)]+)\)/);
     if (parenMatch) candidates.push(parenMatch[1]);
 
-    // "지하" 제거 후 앞부분만: "인천 부평구 경인로 지하 877" → "인천 부평구 경인로"
-    const withoutUnderground = input.replace(/지하\s*\d+/g, '').trim();
-    if (withoutUnderground !== input) candidates.push(withoutUnderground);
-
-    // 역명 패턴 추출: "동수역", "부평역" 등
-    const stationMatch = input.match(/([가-힣]+역)/);
+    // 2. 역명 패턴: "동수역", "부평역"
+    const stationMatch = s.match(/([가-힣]+역)/);
     if (stationMatch) candidates.push(stationMatch[1]);
 
-    return [...new Set(candidates)]; // 중복 제거
+    // 3. "지하 NNN" 제거
+    const noUnderground = s.replace(/지하\s*\d+/g, '').replace(/\s+/g, ' ').trim();
+    if (noUnderground !== s) candidates.push(noUnderground);
+
+    // 4. 시/도 앞부분 제거: "경기 부천시 ..." → "부천시 ..."
+    const noProvince = s.replace(/^(서울|경기|인천|부산|대구|광주|대전|울산|세종|강원|충북|충남|전북|전남|경북|경남|제주)\s*/, '');
+    if (noProvince !== s) candidates.push(noProvince);
+
+    // 5. 구(區) 레벨 제거: "부천시 원미구 조마루로" → "부천시 조마루로"
+    //    (원미구, 소사구 등 시·구 중복 표기 처리)
+    const noGu = s.replace(/([가-힣]+시)\s+[가-힣]+구\s+/, '$1 ');
+    if (noGu !== s) candidates.push(noGu);
+
+    // 6. 시/도 + 구 모두 제거, 도로명+번지만: "조마루로385번길 92"
+    const roadMatch = s.match(/([가-힣0-9]+(?:로|길|대로|번길|로\d+번길)[\d\-]*(?:\s+\d+)?)/);
+    if (roadMatch) candidates.push(roadMatch[1]);
+
+    // 7. 시/군/구 + 도로명: "부천시 조마루로385번길 92"
+    const cityRoad = s.match(/([가-힣]+(시|군|구))\s+[가-힣0-9]+구\s+(.+)/);
+    if (cityRoad) candidates.push(`${cityRoad[1]} ${cityRoad[3]}`);
+
+    return [...new Set(candidates.filter(Boolean))];
 };
 
-const osmSearch = async (query: string): Promise<{ lat: number, lon: number } | null> => {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=kr&accept-language=ko`;
-    const res = await fetch(url, { headers: { 'User-Agent': 'JjinMakchaApp/1.0' } });
-    const data = await res.json();
-    if (data?.length > 0) {
-        return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-    }
+// TMAP 주소 Geocoding (도로명주소 전용 — POI 검색과 별개)
+const tmapAddressGeo = async (address: string): Promise<{ lat: number, lon: number } | null> => {
+    try {
+        const key = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (!key) return null;
+        const url = `https://apis.openapi.sk.com/tmap/geo/fullAddrGeo?version=1&addressFlag=F00&fullAddr=${encodeURIComponent(address)}&appKey=${key}`;
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        const data = await res.json();
+        const coord = data.coordinateInfo?.coordinate?.[0];
+        if (coord?.newLat && coord?.newLon) {
+            return { lat: parseFloat(coord.newLat), lon: parseFloat(coord.newLon) };
+        }
+        if (coord?.lat && coord?.lon) {
+            return { lat: parseFloat(coord.lat), lon: parseFloat(coord.lon) };
+        }
+    } catch {}
     return null;
 };
 
-const tmapSearch = async (query: string): Promise<{ lat: number, lon: number } | null> => {
+const osmSearch = async (query: string): Promise<{ lat: number, lon: number } | null> => {
+    try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=kr&accept-language=ko`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'JjinMakchaApp/1.0' } });
+        const data = await res.json();
+        if (data?.length > 0) {
+            return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+        }
+    } catch {}
+    return null;
+};
+
+const tmapPoiSearch = async (query: string): Promise<{ lat: number, lon: number } | null> => {
     try {
         const key = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
         if (!key) return null;
@@ -51,21 +90,22 @@ const tmapSearch = async (query: string): Promise<{ lat: number, lon: number } |
     return null;
 };
 
-// 주소를 좌표로 변환 (여러 전략 순차 시도)
+// 주소를 좌표로 변환 (전략 순서: TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
     const candidates = extractSearchKeyword(keyword);
-    console.log('geocoding candidates:', candidates);
 
     for (const query of candidates) {
-        // OSM 시도
-        try {
-            const result = await osmSearch(query);
-            if (result) { console.log(`OSM 성공: "${query}"`, result); return result; }
-        } catch {}
+        // 1순위: TMAP 주소 geocoding (도로명주소에 가장 정확)
+        const addrResult = await tmapAddressGeo(query);
+        if (addrResult) { console.log(`TMAP주소 성공: "${query}"`, addrResult); return addrResult; }
 
-        // TMAP POI 시도
-        const tmapResult = await tmapSearch(query);
-        if (tmapResult) { console.log(`TMAP 성공: "${query}"`, tmapResult); return tmapResult; }
+        // 2순위: OSM Nominatim
+        const osmResult = await osmSearch(query);
+        if (osmResult) { console.log(`OSM 성공: "${query}"`, osmResult); return osmResult; }
+
+        // 3순위: TMAP POI 검색
+        const poiResult = await tmapPoiSearch(query);
+        if (poiResult) { console.log(`TMAP POI 성공: "${query}"`, poiResult); return poiResult; }
     }
 
     console.error('모든 geocoding 시도 실패:', keyword);

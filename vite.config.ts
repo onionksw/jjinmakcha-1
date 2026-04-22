@@ -7,8 +7,11 @@ export default defineConfig(({ mode }) => {
     const TAGO_KEY = env.TAGO_API_KEY || '';
     const SEOUL_KEY = env.SEOUL_SUBWAY_API_KEY || 'sample';
     const SEOUL_BUS_KEY = env.SEOUL_BUS_API_KEY || '';
+    const ODSAY_KEY = env.ODSAY_API_KEY || '';
+    const ODSAY_REFERER = env.ODSAY_REFERER || 'http://localhost:3000';
     const TAGO_BASE = 'https://apis.data.go.kr/1613000';
     const SEOUL_BUS_BASE = 'http://ws.bus.go.kr/api/rest';
+    const ODSAY_BASE = 'https://api.odsay.com/v1/api';
 
     const toItems = (data: any): any[] => {
         const item = data?.response?.body?.items?.item;
@@ -126,6 +129,74 @@ export default defineConfig(({ mode }) => {
                             } catch (e: any) {
                                 res.setHeader('Content-Type', 'application/json');
                                 res.end(JSON.stringify({ error: e.message, buses: [] }));
+                            }
+                            return;
+                        }
+
+                        // 버스 노선 유형 조회 (심야버스 여부)
+                        if (url.startsWith('/api/tago-route-type')) {
+                            const params = new URLSearchParams(url.split('?')[1] || '');
+                            const cityCode = params.get('cityCode') || '11';
+                            const routeNo = params.get('routeNo') || '';
+                            if (!TAGO_KEY) {
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify({ routetp: null, error: 'NO_KEY' }));
+                                return;
+                            }
+                            try {
+                                const apiUrl = `${TAGO_BASE}/BusRouteInfoInqireService/getRouteNoList`
+                                    + `?serviceKey=${TAGO_KEY}&cityCode=${cityCode}`
+                                    + `&routeNo=${encodeURIComponent(routeNo)}`
+                                    + `&_type=json&numOfRows=5`;
+                                const r = await fetch(apiUrl);
+                                const data = await r.json();
+                                const items = toItems(data);
+                                const match = items.find((i: any) => i.routeno === routeNo) || items[0];
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify(match
+                                    ? { routetp: match.routetp ?? null, routeid: match.routeid ?? null }
+                                    : { routetp: null }
+                                ));
+                            } catch (e: any) {
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify({ error: e.message, routetp: null }));
+                            }
+                            return;
+                        }
+
+                        // ODsay 대중교통 경로 탐색 프록시
+                        if (url.startsWith('/api/odsay')) {
+                            const params = new URLSearchParams(url.split('?')[1] || '');
+                            const SX = params.get('SX') || '';
+                            const SY = params.get('SY') || '';
+                            const EX = params.get('EX') || '';
+                            const EY = params.get('EY') || '';
+                            const SearchType = params.get('SearchType') || '';
+                            const SearchDate = params.get('SearchDate') || '';
+                            const SearchTime = params.get('SearchTime') || '';
+                            if (!ODSAY_KEY) {
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify({ error: [{ code: 'NO_KEY', message: 'ODSAY_API_KEY 환경변수가 설정되지 않았습니다' }] }));
+                                return;
+                            }
+                            try {
+                                let apiUrl = `${ODSAY_BASE}/searchPubTransPathT?SX=${SX}&SY=${SY}&EX=${EX}&EY=${EY}&apiKey=${ODSAY_KEY}`;
+                                if (SearchType) apiUrl += `&SearchType=${SearchType}`;
+                                if (SearchDate) apiUrl += `&SearchDate=${SearchDate}`;
+                                if (SearchTime) apiUrl += `&SearchTime=${SearchTime}`;
+                                const r = await fetch(apiUrl, {
+                                    headers: {
+                                        'Referer': ODSAY_REFERER,
+                                        'Origin': ODSAY_REFERER,
+                                        'User-Agent': 'Mozilla/5.0',
+                                    },
+                                });
+                                const data = await r.json();
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify(data));
+                            } catch (e: any) {
+                                res.setHeader('Content-Type', 'application/json');
+                                res.end(JSON.stringify({ error: [{ code: '500', message: e.message }] }));
                             }
                             return;
                         }
