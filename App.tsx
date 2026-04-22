@@ -9,6 +9,15 @@ import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
 import TmapRouteView from './components/TmapRouteView';
 
+// 이벤트 트래킹 (fire-and-forget)
+const track = (event: 'visit' | 'search' | 'signup' | 'taxi') => {
+  fetch('/api/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  }).catch(() => {});
+};
+
 // Tab Definitions
 type Tab = 'SEARCH' | 'OPEN_NOW' | 'HISTORY' | 'MY_PAGE';
 type PlaceCategory = 'ALL' | 'PUB' | 'FOOD' | 'CAFE';
@@ -219,14 +228,14 @@ const App: React.FC = () => {
     }
   }, [filterModalType]);
 
-  // Splash Screen Effect
+  // Splash Screen Effect + 방문자 트래킹
   useEffect(() => {
-    // Pick a random message
     setSplashMessage(SPLASH_MESSAGES[Math.floor(Math.random() * SPLASH_MESSAGES.length)]);
-    
+    track('visit');
+
     const timer = setTimeout(() => {
       setShowSplash(false);
-    }, 2500); // Show splash for 2.5 seconds
+    }, 2500);
 
     return () => clearTimeout(timer);
   }, []);
@@ -304,6 +313,7 @@ const App: React.FC = () => {
           setError("경로를 못 찾겠어요... 😭 조금 더 정확히 알려주세요!");
           setAppState(AppState.HOME);
       } else {
+          track('search');
           setRoutes(fetchedRoutes);
           setFullTaxiCost(fetchedCost);
           setNearbyPlaces(MOCK_PLACES);
@@ -525,6 +535,7 @@ const App: React.FC = () => {
       return;
     }
     // 클라이언트 ID 미설정 시 → 개발 목업 로그인
+    track('signup');
     const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글' };
     setLoginProvider(names[provider]);
     setIsLoggedIn(true);
@@ -537,6 +548,7 @@ const App: React.FC = () => {
   };
 
   const openTaxiApp = (app: 'kakao' | 'ut') => {
+      track('taxi');
       setShowTaxiSelector(false);
       const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
       const isAndroid = /Android/.test(navigator.userAgent);
