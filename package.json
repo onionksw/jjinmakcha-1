@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@types/leaflet": "^1.9.21",
+    "jose": "^5.10.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
