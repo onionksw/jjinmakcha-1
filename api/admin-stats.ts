@@ -13,7 +13,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const password = (req.query.password || req.body?.password) as string;
   if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: '비밀번호가 틀렸습니다' });
 
-  if (!SHEET_ID) return res.status(500).json({ error: 'GOOGLE_SHEET_ID 환경변수 미설정' });
+  const emptyDaily = () => Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return { date: d.toISOString().slice(0, 10), count: 0 };
+  });
+
+  if (!SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+    return res.json({
+      totals: { visit: 0, search: 0, signup: 0, taxi: 0 },
+      daily: { visit: emptyDaily(), search: emptyDaily() },
+      notice: 'Google Sheets 환경변수 미설정 — 데이터 없음',
+    });
+  }
 
   try {
     const token = await getGoogleAccessToken();
@@ -25,7 +37,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const data = await r.json();
     const rows: string[][] = data.values || [];
 
-    // 첫 행은 헤더(timestamp, event) → 제외
     const logs = rows.slice(1).filter(row => row.length >= 2);
 
     const totals: Record<EventKey, number> = { visit: 0, search: 0, signup: 0, taxi: 0 };
@@ -34,12 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const [ts, ev] of logs) {
       if (!ev || !(ev in totals)) continue;
       totals[ev as EventKey]++;
-      const date = ts.slice(0, 10); // "YYYY-MM-DD"
+      const date = ts.slice(0, 10);
       if (!dailyMap[date]) dailyMap[date] = { visit: 0, search: 0, signup: 0, taxi: 0 };
       dailyMap[date][ev as EventKey]++;
     }
 
-    // 최근 7일 집계
     const visitDaily: { date: string; count: number }[] = [];
     const searchDaily: { date: string; count: number }[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -56,6 +66,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       daily: { visit: visitDaily, search: searchDaily },
     });
   } catch (e: any) {
-    res.status(500).json({ error: e.message });
+    // Sheets API 호출 실패 시에도 빈 데이터로 응답
+    res.json({
+      totals: { visit: 0, search: 0, signup: 0, taxi: 0 },
+      daily: { visit: emptyDaily(), search: emptyDaily() },
+      notice: `Sheets 오류: ${e.message}`,
+    });
   }
 }
