@@ -172,6 +172,12 @@ const App: React.FC = () => {
   const [filterModalType, setFilterModalType] = useState<'taxi' | 'walk' | null>(null);
   const [filterPickerTemp, setFilterPickerTemp] = useState<number>(99999);
   const pickerScrollRef = useRef<HTMLDivElement>(null);
+
+  // Pull-to-refresh
+  const [pullDeltaY, setPullDeltaY] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const resultsScrollRef = useRef<HTMLDivElement>(null);
+  const pullStartYRef = useRef(0);
   const [pendingFilters, setPendingFilters] = useState({
     departureTime: '',
     maxTaxi: 99999,
@@ -418,6 +424,25 @@ const App: React.FC = () => {
       finally { setIsRefetchingRoutes(false); }
     }
   }, [pendingFilters, filterDepartureTime, startLoc, endLoc]);
+
+  // Pull-to-refresh 핸들러 (현재 필터 기준으로 재조회)
+  const handlePullRefresh = useCallback(async () => {
+    if (!startLoc || !endLoc) return;
+    setIsPullRefreshing(true);
+    try {
+      let depDate: Date | undefined;
+      if (filterDepartureTime) {
+        const [h, m] = filterDepartureTime.split(':').map(Number);
+        depDate = new Date();
+        depDate.setHours(h, m, 0, 0);
+        if (depDate.getTime() < Date.now()) depDate.setDate(depDate.getDate() + 1);
+      }
+      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : undefined;
+      const { routes: r, fullTaxiCost: c } = await getOdsayTransitRoutes(startLoc, endLoc, depDate, walkThreshold, filterExcludeTaxi);
+      if (r.length > 0) { setRoutes(r); setFullTaxiCost(c); }
+    } catch { /* ignore */ }
+    finally { setIsPullRefreshing(false); }
+  }, [startLoc, endLoc, filterDepartureTime, filterMaxWalk, filterExcludeTaxi]);
 
   // 필터 적용된 경로 목록 (택시 제외는 서비스 레벨에서 이미 처리됨)
   const filteredRoutes = routes.filter((r: HybridRoute) => {
@@ -1679,8 +1704,11 @@ const App: React.FC = () => {
                 <ChevronLeft className="w-6 h-6" />
             </button>
             <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide flex items-center gap-1">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide flex items-center gap-1 flex-wrap">
                     <span className="bg-orange-100 text-orange-500 px-1.5 py-0.5 rounded-full text-[9px] font-black">🚕 하이브리드 추천 중</span>
+                    {filterDepartureTime && (
+                        <span className="bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full text-[9px] font-black">🕐 {filterDepartureTime} 기준</span>
+                    )}
                 </p>
                 <h2 className="text-sm font-black text-gray-800 truncate flex items-center gap-1">
                     <span className="truncate max-w-[100px]">{startLoc}</span>
@@ -1795,7 +1823,45 @@ const App: React.FC = () => {
             </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        <div
+            ref={resultsScrollRef}
+            className="flex-1 overflow-y-auto p-4 space-y-4"
+            onTouchStart={(e) => {
+                if ((resultsScrollRef.current?.scrollTop ?? 1) === 0) {
+                    pullStartYRef.current = e.touches[0].clientY;
+                } else {
+                    pullStartYRef.current = 0;
+                }
+            }}
+            onTouchMove={(e) => {
+                if (pullStartYRef.current === 0) return;
+                const delta = e.touches[0].clientY - pullStartYRef.current;
+                if (delta > 0 && (resultsScrollRef.current?.scrollTop ?? 0) === 0) {
+                    setPullDeltaY(Math.min(delta * 0.5, 70));
+                } else {
+                    pullStartYRef.current = 0;
+                    setPullDeltaY(0);
+                }
+            }}
+            onTouchEnd={() => {
+                if (pullDeltaY > 50 && !isPullRefreshing) {
+                    handlePullRefresh();
+                }
+                pullStartYRef.current = 0;
+                setPullDeltaY(0);
+            }}
+        >
+            {/* Pull-to-refresh 인디케이터 */}
+            <div
+                className="flex justify-center items-center overflow-hidden transition-all duration-300"
+                style={{ height: isPullRefreshing ? 48 : pullDeltaY > 10 ? pullDeltaY : 0 }}
+            >
+                <div
+                    className={`w-8 h-8 border-[3px] border-brandBlue/20 border-t-brandBlue rounded-full ${isPullRefreshing ? 'animate-spin' : ''}`}
+                    style={{ transform: isPullRefreshing ? undefined : `rotate(${pullDeltaY * 4}deg)` }}
+                />
+            </div>
+
             {/* 낮 시간대 안내 배너 (06:00~18:00) */}
             {(() => {
                 const h = new Date().getHours();
@@ -1874,7 +1940,13 @@ const App: React.FC = () => {
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index);
-                const arrDate = new Date(Date.now() + route.totalDuration * 60000);
+                const arrDate = (() => {
+                    const [dh, dm] = route.departureTime.split(':').map(Number);
+                    const d = new Date();
+                    d.setHours(dh, dm, 0, 0);
+                    if (d.getTime() < Date.now() - 300000) d.setDate(d.getDate() + 1);
+                    return new Date(d.getTime() + route.totalDuration * 60000);
+                })();
                 const arrH = arrDate.getHours();
                 const arrM = arrDate.getMinutes();
                 const arrStr = `${arrH < 12 ? '오전' : '오후'} ${arrH === 0 ? 12 : arrH > 12 ? arrH - 12 : arrH}:${arrM.toString().padStart(2, '0')}`;
