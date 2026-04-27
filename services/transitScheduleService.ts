@@ -8,11 +8,19 @@
  *  - 지하철: 05:30~00:30 (01:00~05:29 = 운행 없음)
  *  - 일반버스(간선·지선·광역·마을): 04:30~24:00 (01:00~04:29 = 운행 없음)
  *  - 심야버스(N버스): 23:30~05:30 (유일하게 01:00~05:00 운행)
+ *  - 공항버스 등 기타: 노선마다 상이 → 알 수 없으면 ODsay를 신뢰
  *
  * TAGO routetp 값(서울 기준):
  *  1: 공항버스  2: 마을버스  3: 간선버스  4: 지선버스
  *  5: 순환버스  6: 광역버스  10: 외곽버스  11: 직행좌석  16: 심야버스
+ *
+ * 새벽(01:00~05:59) 판단 전략:
+ *  "야간 운행 불가"가 확실한 유형(간선·지선·마을·순환·광역·외곽·직행좌석)만 차단.
+ *  유형 불명(null) · 공항버스(1) · 심야버스(16) 등은 ODsay 결과를 신뢰해 통과.
  */
+
+// 새벽에 운행하지 않는 것이 확실한 routetp 값
+const DAY_ONLY_TYPES = new Set(['2', '3', '4', '5', '6', '10', '11']);
 
 // 24h 캐시 (노선 유형은 자주 바뀌지 않음)
 const CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -70,14 +78,14 @@ export async function isSubPathRunnable(sp: any, hour: number): Promise<boolean>
     // 낮 시간(06:00~00:59)은 일반버스 운행 → pass
     if (hour >= 6 || hour === 0) return true;
 
-    // 01:00~05:59: 심야버스만 운행 가능
-    // lane에 여러 버스가 있을 수 있으므로 하나라도 심야버스면 통과
+    // 01:00~05:59: 확실한 낮 전용 노선 유형만 차단, 나머지는 ODsay를 신뢰
     const lanes: any[] = sp.lane || [];
     const busNos = lanes.map((l: any) => l.busNo || l.name || '').filter(Boolean);
     if (busNos.length === 0) return false;
 
-    const results = await Promise.all(busNos.map(no => isNightBus(no)));
-    return results.some(Boolean);
+    const routeTypes = await Promise.all(busNos.map(no => fetchRouteType(no)));
+    // 하나라도 낮 전용이 아닌 버스가 있으면 통과 (null = 불명 → 신뢰)
+    return routeTypes.some(rt => !DAY_ONLY_TYPES.has(rt ?? ''));
   }
 
   return true;
