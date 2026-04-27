@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, X, Map } from 'lucide-react';
+import { MapPin, X, Map, ChevronLeft } from 'lucide-react';
 import { searchPoiSuggestions, setCachedCoordinates, PoiSuggestion } from '../services/tmapService';
 
 interface Props {
@@ -7,7 +7,7 @@ interface Props {
     onChange: (value: string) => void;
     placeholder?: string;
     focusBorderClass?: string;
-    onGps?: () => void; // 현위치 버튼 (출발지만)
+    onGps?: () => void;
 }
 
 export default function PlaceSearchInput({
@@ -22,9 +22,9 @@ export default function PlaceSearchInput({
     const [results, setResults] = useState<PoiSuggestion[]>([]);
     const [loading, setLoading] = useState(false);
     const [searched, setSearched] = useState(false);
+    const [mapPoi, setMapPoi] = useState<PoiSuggestion | null>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // 부모(GPS, 집 버튼)에서 값이 바뀌면 동기화
     useEffect(() => { setQuery(value); }, [value]);
 
     const handleSearch = async () => {
@@ -45,19 +45,22 @@ export default function PlaceSearchInput({
         onChange(poi.name);
         setCachedCoordinates(poi.name, { lat: poi.lat, lon: poi.lon });
         setModalOpen(false);
+        setMapPoi(null);
     };
 
-    const handleMapView = (poi: PoiSuggestion, e: React.MouseEvent) => {
+    const openMap = (poi: PoiSuggestion, e: React.MouseEvent) => {
         e.stopPropagation();
-        window.open(
-            `https://map.kakao.com/link/map/${encodeURIComponent(poi.name)},${poi.lat},${poi.lon}`,
-            '_blank'
-        );
+        setMapPoi(poi);
+    };
+
+    const osmSrc = (poi: PoiSuggestion) => {
+        const d = 0.004;
+        return `https://www.openstreetmap.org/export/embed.html?bbox=${poi.lon - d},${poi.lat - d},${poi.lon + d},${poi.lat + d}&layer=mapnik&marker=${poi.lat},${poi.lon}`;
     };
 
     return (
         <div className="w-full flex gap-2">
-            {/* 텍스트 입력 + 현위치 버튼 */}
+            {/* 텍스트 입력 */}
             <div className="relative flex-1">
                 <input
                     ref={inputRef}
@@ -78,7 +81,6 @@ export default function PlaceSearchInput({
                     </button>
                 )}
             </div>
-            {/* 검색 버튼 */}
             <button
                 onClick={handleSearch}
                 className="px-4 py-4 bg-brandBlue text-white rounded-2xl font-bold text-sm shrink-0 hover:bg-blue-500 active:scale-95 transition-all"
@@ -86,8 +88,8 @@ export default function PlaceSearchInput({
                 검색
             </button>
 
-            {/* 결과 모달 */}
-            {modalOpen && (
+            {/* ── 검색 결과 모달 ── */}
+            {modalOpen && !mapPoi && (
                 <div
                     className="fixed inset-0 z-[80] bg-black/50 flex items-end justify-center"
                     onClick={() => setModalOpen(false)}
@@ -97,20 +99,15 @@ export default function PlaceSearchInput({
                         style={{ maxHeight: '70vh' }}
                         onClick={e => e.stopPropagation()}
                     >
-                        {/* 모달 헤더 */}
                         <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 shrink-0">
                             <p className="font-black text-gray-800 text-base">
                                 <span className="text-brandBlue">"{query}"</span> 검색 결과
                             </p>
-                            <button
-                                onClick={() => setModalOpen(false)}
-                                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400"
-                            >
+                            <button onClick={() => setModalOpen(false)} className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400">
                                 <X size={20} />
                             </button>
                         </div>
 
-                        {/* 결과 목록 */}
                         <div className="overflow-y-auto flex-1">
                             {loading && (
                                 <div className="flex items-center justify-center py-12 gap-3">
@@ -118,7 +115,6 @@ export default function PlaceSearchInput({
                                     <span className="text-gray-400 font-bold text-sm">검색 중...</span>
                                 </div>
                             )}
-
                             {!loading && results.map((poi, i) => (
                                 <div
                                     key={i}
@@ -130,12 +126,10 @@ export default function PlaceSearchInput({
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <p className="text-sm font-bold text-gray-800 truncate">{poi.name}</p>
-                                        {poi.address && (
-                                            <p className="text-xs text-gray-400 mt-0.5 truncate">{poi.address}</p>
-                                        )}
+                                        {poi.address && <p className="text-xs text-gray-400 mt-0.5 truncate">{poi.address}</p>}
                                     </div>
                                     <button
-                                        onClick={e => handleMapView(poi, e)}
+                                        onClick={e => openMap(poi, e)}
                                         className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-50 text-green-600 text-xs font-bold shrink-0 hover:bg-green-100 active:scale-95 transition-all"
                                     >
                                         <Map size={12} />
@@ -143,7 +137,6 @@ export default function PlaceSearchInput({
                                     </button>
                                 </div>
                             ))}
-
                             {!loading && searched && results.length === 0 && (
                                 <div className="flex flex-col items-center py-12 text-gray-400">
                                     <MapPin size={36} className="mb-3 opacity-30" />
@@ -151,6 +144,48 @@ export default function PlaceSearchInput({
                                     <p className="text-xs mt-1">다른 키워드로 다시 검색해보세요</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── 지도 모달 ── */}
+            {mapPoi && (
+                <div className="fixed inset-0 z-[90] bg-black/60 flex items-end justify-center">
+                    <div
+                        className="bg-white w-full max-w-lg rounded-t-3xl overflow-hidden shadow-2xl flex flex-col"
+                        style={{ height: '82vh' }}
+                    >
+                        {/* 지도 헤더 */}
+                        <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b border-gray-100 shrink-0">
+                            <button
+                                onClick={() => setMapPoi(null)}
+                                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400"
+                            >
+                                <ChevronLeft size={22} />
+                            </button>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-black text-gray-800 truncate">{mapPoi.name}</p>
+                                {mapPoi.address && <p className="text-xs text-gray-400 truncate">{mapPoi.address}</p>}
+                            </div>
+                        </div>
+
+                        {/* 지도 iframe */}
+                        <iframe
+                            src={osmSrc(mapPoi)}
+                            className="w-full flex-1 border-0"
+                            title="지도"
+                        />
+
+                        {/* 선택 버튼 */}
+                        <div className="px-4 py-4 shrink-0 bg-white border-t border-gray-100">
+                            <button
+                                onClick={() => handleSelect(mapPoi)}
+                                className="w-full py-4 bg-brandBlue text-white font-black text-base rounded-2xl shadow-lg shadow-blue-200 active:scale-95 transition-all flex items-center justify-center gap-2"
+                            >
+                                <MapPin size={18} />
+                                여기로 선택
+                            </button>
                         </div>
                     </div>
                 </div>
