@@ -334,7 +334,7 @@ const App: React.FC = () => {
     try {
       // Fetch Routes from TMAP Transit API
       const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : undefined;
-      const routeData = await getOdsayTransitRoutes(startLoc, endLoc, undefined, walkThreshold);
+      const routeData = await getOdsayTransitRoutes(startLoc, endLoc, new Date(), walkThreshold);
       const { routes: fetchedRoutes, fullTaxiCost: fetchedCost } = routeData;
 
       if (fetchedRoutes.length === 0) {
