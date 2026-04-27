@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera } from 'lucide-react';
 import { getOdsayTransitRoutes } from './services/odsayService';
+import { reverseGeocode, setCachedCoordinates } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
 import { AppState, HybridRoute, LDTResult, Place } from './types';
 import CostChart from './components/CostChart';
@@ -473,14 +474,28 @@ const App: React.FC = () => {
   }, [activeTab]);
 
   const handleUseCurrentLocation = () => {
-      if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(() => {
-              setStartLoc("강남역 10번출구"); // Mock
-          }, (err) => {
-              console.error(err);
-              setStartLoc("서울시청"); // Fallback
-          });
+      if (!navigator.geolocation) {
+          alert('이 브라우저는 위치 기능을 지원하지 않아요.');
+          return;
       }
+      setStartLoc('📍 위치 확인 중...');
+      navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+              const { latitude: lat, longitude: lon } = pos.coords;
+              const label = await reverseGeocode(lat, lon);
+              setCachedCoordinates(label, { lat, lon });
+              setStartLoc(label);
+          },
+          (err) => {
+              setStartLoc('');
+              if (err.code === 1) {
+                  alert('위치 권한을 허용해주세요.\n설정 > 브라우저 > 위치 접근 허용');
+              } else {
+                  alert('위치를 가져올 수 없어요. 다시 시도해주세요.');
+              }
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
   };
 
   const handleSelectRoute = (route: HybridRoute) => {

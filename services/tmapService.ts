@@ -127,6 +127,37 @@ export const searchPoiSuggestions = async (query: string): Promise<PoiSuggestion
     }
 };
 
+// ─── 좌표 → 주소 (역지오코딩) ────────────────────────────────────────────
+export const reverseGeocode = async (lat: number, lon: number): Promise<string> => {
+    try {
+        const key = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (key) {
+            const url = `https://apis.openapi.sk.com/tmap/geo/reversegeocoding?version=1&lat=${lat}&lon=${lon}&coordType=WGS84GEO&addressType=A10&appKey=${key}`;
+            const res = await fetch(url, { headers: { appKey: key, Accept: 'application/json' } });
+            const data = await res.json();
+            const info = data.addressInfo;
+            if (info) {
+                const addr = info.roadAddress || info.fullAddress || '';
+                if (addr) return addr;
+            }
+        }
+    } catch {}
+
+    // 폴백: OSM Nominatim
+    try {
+        const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=ko`;
+        const res = await fetch(url, { headers: { 'User-Agent': 'JjinMakchaApp/1.0' } });
+        const data = await res.json();
+        const addr = data.address;
+        if (addr) {
+            const parts = [addr.road, addr.quarter || addr.suburb, addr.city_district || addr.borough].filter(Boolean);
+            if (parts.length) return parts.join(' ');
+        }
+    } catch {}
+
+    return `현재위치`;
+};
+
 // 주소를 좌표로 변환 (캐시 → TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
     // 장소 선택 시 미리 캐시된 좌표 우선
