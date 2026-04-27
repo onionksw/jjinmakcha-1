@@ -8,6 +8,7 @@ import Countdown from './components/Countdown';
 import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
 import TmapRouteView from './components/TmapRouteView';
+import PlaceSearchInput from './components/PlaceSearchInput';
 
 // 이벤트 트래킹 (fire-and-forget)
 const track = (event: 'visit' | 'search' | 'signup' | 'taxi') => {
@@ -805,37 +806,29 @@ const App: React.FC = () => {
                 📍 출발지
             </label>
             <div className="flex space-x-2">
-                <input
-                    type="text"
+                <PlaceSearchInput
                     value={startLoc}
-                    onChange={(e) => setStartLoc(e.target.value)}
-                    placeholder="어디서 출발해?"
-                    className="w-full bg-gray-50 border-2 border-transparent focus:border-brandBlue focus:bg-white rounded-2xl px-5 py-4 text-gray-800 focus:outline-none transition-all placeholder:text-gray-400 font-medium"
+                    onChange={setStartLoc}
+                    placeholder="지금 있는 곳 검색 (상호명, 건물명…)"
+                    focusBorderClass="focus:border-brandBlue"
                 />
-                <button onClick={() => requireLogin(() => setPostcodeTarget('start'))} className="p-4 bg-gray-50 rounded-2xl text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap font-bold text-sm shrink-0">
-                    주소찾기
-                </button>
                 <button onClick={() => requireLogin(handleUseCurrentLocation)} className="p-4 bg-blue-50 rounded-2xl text-brandBlue hover:bg-blue-100 transition-colors shrink-0">
                     <MapPin className="w-6 h-6" />
                 </button>
             </div>
           </div>
-          
+
           <div className="space-y-2">
             <label className="text-lg font-bold text-gray-700 ml-2 flex items-center gap-1">
                 🏁 도착지
             </label>
             <div className="flex space-x-2">
-                <input
-                    type="text"
+                <PlaceSearchInput
                     value={endLoc}
-                    onChange={(e) => setEndLoc(e.target.value)}
-                    placeholder="어디로 갈까?"
-                    className="w-full bg-gray-50 border-2 border-transparent focus:border-brandMint focus:bg-white rounded-2xl px-5 py-4 text-gray-800 focus:outline-none transition-all placeholder:text-gray-400 font-medium"
+                    onChange={setEndLoc}
+                    placeholder="어디로 갈까? (집, 역명…)"
+                    focusBorderClass="focus:border-brandMint"
                 />
-                <button onClick={() => requireLogin(() => setPostcodeTarget('end'))} className="p-4 bg-gray-50 rounded-2xl text-gray-500 hover:bg-gray-100 transition-colors whitespace-nowrap font-bold text-sm shrink-0">
-                    주소찾기
-                </button>
             </div>
           </div>
 

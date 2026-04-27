@@ -90,8 +90,45 @@ const tmapPoiSearch = async (query: string): Promise<{ lat: number, lon: number 
     return null;
 };
 
-// 주소를 좌표로 변환 (전략 순서: TMAP주소 → OSM → TMAP POI)
+// ─── 장소 선택 시 좌표 캐시 (재조회 방지) ─────────────────────────────────
+const coordCache = new Map<string, { lat: number; lon: number }>();
+
+export const setCachedCoordinates = (key: string, coords: { lat: number; lon: number }) => {
+    coordCache.set(key, coords);
+};
+
+// ─── POI 자동완성 검색 (여러 결과 반환) ───────────────────────────────────
+export interface PoiSuggestion {
+    name: string;
+    address: string;
+    lat: number;
+    lon: number;
+}
+
+export const searchPoiSuggestions = async (query: string): Promise<PoiSuggestion[]> => {
+    try {
+        const key = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (!key) return [];
+        const url = `https://apis.openapi.sk.com/tmap/pois?version=1&searchKeyword=${encodeURIComponent(query)}&resCoordType=WGS84GEO&reqCoordType=WGS84GEO&count=8`;
+        const res = await fetch(url, { headers: { appKey: key, Accept: 'application/json' } });
+        const data = await res.json();
+        const pois: any[] = data.searchPoiInfo?.pois || [];
+        return pois.map(poi => ({
+            name: poi.name || '',
+            address: [poi.middleAddrName, poi.lowerAddrName, poi.roadName].filter(Boolean).join(' '),
+            lat: parseFloat(poi.frontLat || poi.noorLat),
+            lon: parseFloat(poi.frontLon || poi.noorLon),
+        })).filter(p => p.lat && p.lon);
+    } catch {
+        return [];
+    }
+};
+
+// 주소를 좌표로 변환 (캐시 → TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
+    // 장소 선택 시 미리 캐시된 좌표 우선
+    if (coordCache.has(keyword)) return coordCache.get(keyword)!;
+
     const candidates = extractSearchKeyword(keyword);
 
     for (const query of candidates) {
