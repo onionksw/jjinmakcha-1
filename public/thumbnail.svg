@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="60%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0f3460"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#4CC9F0"/>
+      <stop offset="100%" stop-color="#845EC2"/>
+    </linearGradient>
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#4CC9F0"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- 배경 -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- 장식 원 -->
+  <circle cx="1080" cy="80"  r="260" fill="#f72585" opacity="0.07"/>
+  <circle cx="120"  cy="540" r="220" fill="#4CC9F0" opacity="0.06"/>
+  <circle cx="600"  cy="700" r="300" fill="#845EC2" opacity="0.05"/>
+
+  <!-- 상단 액센트 바 -->
+  <rect x="0" y="0" width="1200" height="7" fill="url(#accent)"/>
+
+  <!-- 맥주 이모지 -->
+  <text x="80" y="420" font-size="260"
+        font-family="Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif">🍺</text>
+
+  <!-- 메인 타이틀 -->
+  <text x="400" y="270" font-size="170" font-weight="900"
+        font-family="'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif"
+        fill="url(#titleGrad)" filter="url(#glow)" letter-spacing="-4">찐막차</text>
+
+  <!-- 타이틀 아래 강조선 -->
+  <rect x="400" y="285" width="660" height="7" rx="4" fill="url(#accent)"/>
+
+  <!-- 슬로건 -->
+  <text x="402" y="380" font-size="46"
+        font-family="'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif"
+        fill="white" opacity="0.75">막차 시간 계산 &amp; 스마트 귀가 경로</text>
+
+  <!-- 서브 카피 -->
+  <text x="402" y="455" font-size="44" font-weight="700"
+        font-family="'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif"
+        fill="#4CC9F0">택시비 아껴서 3차 가자! 🍻</text>
+
+  <!-- 뱃지 -->
+  <rect x="402" y="498" width="220" height="52" rx="26" fill="#4CC9F0" opacity="0.15"/>
+  <rect x="402" y="498" width="220" height="52" rx="26" fill="none" stroke="#4CC9F0" stroke-width="1.5" opacity="0.4"/>
+  <text x="512" y="532" font-size="26" font-weight="700" text-anchor="middle"
+        font-family="'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif"
+        fill="#4CC9F0">🚕 하이브리드 경로</text>
+
+  <!-- 도메인 -->
+  <text x="1170" y="610" font-size="28" text-anchor="end"
+        font-family="'Helvetica Neue',Arial,sans-serif"
+        fill="white" opacity="0.3">everyvibe.kr</text>
+</svg>
