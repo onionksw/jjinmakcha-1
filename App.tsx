@@ -2446,6 +2446,8 @@ const App: React.FC = () => {
                                     type={segment.type}
                                     stationName={segment.startName}
                                     lineName={segment.lineName}
+                                    lat={segment.path?.[0]?.lat}
+                                    lon={segment.path?.[0]?.lng}
                                   />
                               )}
                           </div>

@@ -252,6 +252,46 @@ export const isOutsideSeoul = (lat: number, lon: number): boolean => {
     return lat < SEOUL_BBOX.latMin || lat > SEOUL_BBOX.latMax || lon < SEOUL_BBOX.lonMin || lon > SEOUL_BBOX.lonMax;
 };
 
+// ─── 좌표 → TAGO 시군구 코드 (버스 실시간 도착정보 조회용) ────────────────
+// 서울(11)·인천(22)·수도권 주요 시·군 코드 매핑
+const TAGO_CITY_NAME_TO_CODE: Record<string, string> = {
+    '수원시': '31010', '성남시': '31020', '의정부시': '31030', '안양시': '31040',
+    '부천시': '31050', '광명시': '31060', '평택시': '31070', '동두천시': '31080',
+    '안산시': '31090', '고양시': '31100', '과천시': '31110', '구리시': '31120',
+    '남양주시': '31130', '오산시': '31140', '시흥시': '31150', '군포시': '31160',
+    '의왕시': '31170', '하남시': '31180', '용인시': '31190', '파주시': '31200',
+    '이천시': '31210', '안성시': '31220', '김포시': '31230', '화성시': '31240',
+    '광주시': '31250', '양주시': '31260', '포천시': '31270', '여주시': '31280',
+};
+
+const cityCodeCache = new Map<string, string>();
+
+export const getTagoCityCode = async (lat: number, lon: number): Promise<string> => {
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+    if (cityCodeCache.has(key)) return cityCodeCache.get(key)!;
+
+    let code = '11'; // 기본값: 서울
+    try {
+        const appKey = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (appKey) {
+            const url = `https://apis.openapi.sk.com/tmap/geo/reversegeocoding?version=1&lat=${lat}&lon=${lon}&coordType=WGS84GEO&addressType=A10&appKey=${appKey}`;
+            const res = await fetch(url, { headers: { appKey, Accept: 'application/json' } });
+            const data = await res.json();
+            const info = data.addressInfo;
+            const cityDo: string = info?.city_do || '';
+            const guGun: string = info?.gu_gun || '';
+            if (cityDo.includes('인천')) code = '22';
+            else if (!cityDo.includes('서울')) {
+                const matched = Object.entries(TAGO_CITY_NAME_TO_CODE).find(([name]) => guGun.includes(name));
+                if (matched) code = matched[1];
+            }
+        }
+    } catch {}
+
+    cityCodeCache.set(key, code);
+    return code;
+};
+
 // 주소를 좌표로 변환 (캐시 → TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
     // 장소 선택 시 미리 캐시된 좌표 우선

@@ -1,15 +1,18 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { getSubwayArrivals, SubwayArrival } from '../services/realtimeService';
 import { getBusArrivals, formatArrtime, formatArrMsg, BusArrivalInfo } from '../services/tagoService';
+import { getTagoCityCode } from '../services/tmapService';
 
 interface Props {
   type: 'subway' | 'bus';
   stationName: string;
   lineName?: string;
   cityCode?: string;
+  lat?: number;  // 좌표가 있으면 서울/경기/인천 등 도시코드를 자동 판별
+  lon?: number;
 }
 
-const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCode = '11' }) => {
+const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCode, lat, lon }) => {
   const [subwayData, setSubwayData] = useState<SubwayArrival[]>([]);
   const [busData, setBusData] = useState<BusArrivalInfo[]>([]);
   const [displayStation, setDisplayStation] = useState(stationName);
@@ -25,7 +28,9 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
         const data = await getSubwayArrivals(stationName);
         setSubwayData(data);
       } else {
-        const result = await getBusArrivals(stationName, lineName, cityCode);
+        // cityCode가 명시되지 않으면 좌표로 서울/경기/인천 등 자동 판별
+        const resolvedCityCode = cityCode ?? (lat && lon ? await getTagoCityCode(lat, lon) : '11');
+        const result = await getBusArrivals(stationName, lineName, resolvedCityCode);
         setBusData(result.arrivals);
         if (result.stationName) setDisplayStation(result.stationName);
       }
@@ -38,7 +43,7 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
     } finally {
       setLoading(false);
     }
-  }, [type, stationName, lineName, cityCode]);
+  }, [type, stationName, lineName, cityCode, lat, lon]);
 
   useEffect(() => {
     fetchData();
