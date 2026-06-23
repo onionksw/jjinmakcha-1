@@ -695,21 +695,29 @@ const App: React.FC = () => {
       }
   };
 
-  // Calculate time remaining until departure with Fun Comments
-  const calculatePlayTime = (departureTimeStr: string, index?: number) => {
+  // Calculate time remaining until departure with Fun Comments (도보 시간 반영)
+  const calculatePlayTime = (departureTimeStr: string, index?: number, firstWalkMinutes: number = 0) => {
     const now = new Date();
-    const [targetHours, targetMinutes] = departureTimeStr.split(':').map(Number);
-    let target = new Date();
-    target.setHours(targetHours, targetMinutes, 0, 0);
+    let target: Date;
 
-    // Handle crossing midnight
-    if (target.getTime() < now.getTime()) {
-        if (now.getHours() > 20 && targetHours < 12) {
-             target.setDate(target.getDate() + 1);
+    // 막차(찐막차) 마지노선이 계산돼 있으면 그 시각을 기준으로 사용 (실제 운행 스케줄 기반)
+    if (ldtResult?.latestDepartureMs) {
+        target = new Date(ldtResult.latestDepartureMs);
+    } else {
+        const [targetHours, targetMinutes] = departureTimeStr.split(':').map(Number);
+        target = new Date();
+        target.setHours(targetHours, targetMinutes, 0, 0);
+
+        // Handle crossing midnight
+        if (target.getTime() < now.getTime()) {
+            if (now.getHours() > 20 && targetHours < 12) {
+                 target.setDate(target.getDate() + 1);
+            }
         }
     }
 
-    const diffMs = target.getTime() - now.getTime();
+    // 첫 도보 구간만큼 더 일찍 출발해야 하므로 남은 시간에서 차감
+    const diffMs = target.getTime() - now.getTime() - firstWalkMinutes * 60000;
     if (diffMs <= 0) return { timeText: "지금 출발", comment: "놓치겠다! 뛰어!! 🏃‍♂️", urgent: true };
 
     const diffMins = Math.floor(diffMs / 60000);
@@ -1941,7 +1949,8 @@ const App: React.FC = () => {
                 </div>
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
-                const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index);
+                const firstWalkMinutes = route.segments[0]?.type === 'walk' ? route.segments[0].durationMinutes : 0;
+                const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index, firstWalkMinutes);
                 const arrDate = (() => {
                     const [dh, dm] = route.departureTime.split(':').map(Number);
                     const d = new Date();
