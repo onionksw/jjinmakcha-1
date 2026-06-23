@@ -568,6 +568,19 @@ export const getOdsayTransitRoutes = async (
     throw new Error('해당 시각에 운행 중인 대중교통 경로가 없습니다.\n심야버스(N버스)를 확인하거나 택시를 이용해보세요.');
   }
 
+  // 같은 경로(같은 구간 시퀀스)는 중복 제거
+  const pathKey = (p: any): string =>
+    (p.subPath || []).map((sp: any) => `${sp.trafficType}:${sp.startName ?? ''}>${sp.endName ?? ''}`).join('|');
+  const uniquePaths: any[] = [];
+  const seenKeys = new Set<string>();
+  for (const p of paths) {
+    const k = pathKey(p);
+    if (seenKeys.has(k)) continue;
+    seenKeys.add(k);
+    uniquePaths.push(p);
+  }
+  paths = uniquePaths;
+
   const fullTaxiCost = 35000;
   const baseMs       = departureDate ? departureDate.getTime() : Date.now();
 
@@ -580,11 +593,36 @@ export const getOdsayTransitRoutes = async (
 
   const timeMode = detectTimeMode(baseMs);
   const strategies: HybridStrategy[] = ['time-saving', 'cost-saving', 'balanced'];
-  const pathForStrategy = [0, 0, Math.min(1, paths.length - 1)];
+
+  // 전략별로 서로 다른 ODsay 경로를 배정 (가능한 만큼 다양하게)
+  const byTime = [...paths].sort((a, b) => (a.info?.totalTime ?? 9999) - (b.info?.totalTime ?? 9999));
+  const byCost = [...paths].sort((a, b) =>
+    (a.info?.payment ?? 9999) - (b.info?.payment ?? 9999) || (a.info?.totalTime ?? 9999) - (b.info?.totalTime ?? 9999)
+  );
+
+  const chosen: any[] = [];
+  const usedKeys = new Set<string>();
+  const tryAdd = (p: any) => {
+    const k = pathKey(p);
+    if (!p || usedKeys.has(k)) return false;
+    usedKeys.add(k);
+    chosen.push(p);
+    return true;
+  };
+
+  tryAdd(byTime[0]); // 1순위: 가장 빠른 경로
+  for (const p of byCost) { if (tryAdd(p)) break; } // 2순위: 겹치지 않는 가장 저렴한 경로
+
+  // 3순위: 위 둘과 겹치지 않는 경로 중 소요시간 중간값 (없으면 어쩔 수 없이 재사용)
+  const remaining = byTime.filter(p => !usedKeys.has(pathKey(p)));
+  if (remaining.length > 0) {
+    tryAdd(remaining[Math.floor(remaining.length / 2)]);
+  }
+  while (chosen.length < 3) chosen.push(byTime[chosen.length % byTime.length]);
 
   const routes = strategies.map((strategy, si) =>
     buildTypedRoute(
-      paths[pathForStrategy[si]],
+      chosen[si],
       strategy, si, baseMs, fullTaxiCost,
       effectiveWalkThreshold, timeMode,
       endCoords.lat, endCoords.lon,
