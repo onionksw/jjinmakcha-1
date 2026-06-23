@@ -529,7 +529,7 @@ async function buildTypedRoute(
     totalDuration: hybridDuration,
     savedAmount: Math.max(0, fullTaxiCost - hybridTotalCost),
     segments: hybridSegments,
-    departureTime: toHHMM(slotIdx * 2),
+    departureTime: toHHMM(0), // 모든 추천 경로는 동일하게 "지금" 기준 출발
     transferPoint,
     taxiCostOnly: fullTaxiCost,
     transferCount,
@@ -566,7 +566,7 @@ function buildPureRoute(path: any, pathIdx: number, baseMs: number, fullTaxiCost
     totalCost, totalDuration,
     savedAmount: Math.max(0, fullTaxiCost - totalCost),
     segments,
-    departureTime: toHHMM(pathIdx * 2),
+    departureTime: toHHMM(0), // 모든 추천 경로는 동일하게 "지금" 기준 출발
     transferPoint,
     taxiCostOnly: fullTaxiCost,
     transferCount, walkMinutes,

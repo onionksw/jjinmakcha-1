@@ -2432,27 +2432,12 @@ const App: React.FC = () => {
                                     lineName={segment.lineName}
                                   />
                               )}
-                              {segment.type === 'bus' && (segment.departureTime || segment.arrivalTime) && (
-                                  <div className="mt-2 rounded-2xl border p-3 bg-blue-50 border-blue-100">
-                                      <div className="flex items-center gap-1.5 mb-1">
-                                          <span className="w-2 h-2 rounded-full bg-brandBlue" />
-                                          <span className="text-xs font-black text-gray-600">🚌 탑승 예정 시간</span>
-                                      </div>
-                                      <div className="flex gap-4">
-                                          {segment.departureTime && (
-                                              <div>
-                                                  <p className="text-[10px] text-gray-400 font-bold">탑승</p>
-                                                  <p className="text-sm font-black text-brandBlue">{segment.departureTime}</p>
-                                              </div>
-                                          )}
-                                          {segment.arrivalTime && (
-                                              <div>
-                                                  <p className="text-[10px] text-gray-400 font-bold">하차</p>
-                                                  <p className="text-sm font-black text-brandBlue">{segment.arrivalTime}</p>
-                                              </div>
-                                          )}
-                                      </div>
-                                  </div>
+                              {segment.type === 'bus' && segment.startName && (
+                                  <RealTimeArrival
+                                    type={segment.type}
+                                    stationName={segment.startName}
+                                    lineName={segment.lineName}
+                                  />
                               )}
                           </div>
                       </div>
