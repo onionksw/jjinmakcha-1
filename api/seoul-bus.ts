@@ -26,8 +26,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const arsId = stations[0].arsId;
     const foundStationName = stations[0].stNm || stationName;
 
-    // 2. arsId → 도착 정보
-    const arrUrl = `${BASE}/arrive/getLowArrInfoByStId?serviceKey=${KEY}&arsId=${arsId}&resultType=json`;
+    // 2. arsId → 도착 정보 (전체 버스 — getLowArrInfoByStId는 저상버스만 조회되어 제외)
+    const arrUrl = `${BASE}/arrive/getArrInfoByStId?serviceKey=${KEY}&arsId=${arsId}&resultType=json`;
     const arrRes = await fetch(arrUrl);
     const arrData = await arrRes.json();
     let arrivals = toItems(arrData).map((item: any) => ({
