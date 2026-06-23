@@ -1,5 +1,5 @@
 import { HybridRoute, RouteSegment } from '../types';
-import { getCoordinates } from './tmapService';
+import { getCoordinates, getDrivingDistance } from './tmapService';
 import { isPathRunnable } from './transitScheduleService';
 
 type HybridStrategy = 'time-saving' | 'cost-saving' | 'balanced';
@@ -42,6 +42,52 @@ function calcDistanceTaxiCost(distKm: number): number {
 // 직선 거리(km) → 택시 소요 시간 (25km/h 평균)
 function calcDistanceTaxiMinutes(distKm: number): number {
   return Math.max(2, Math.round(distKm / 25 * 60));
+}
+
+// ─── 서울시 중형택시 공식 요금 (2023.02 개편 기준) ────────────────────────
+const TAXI_BASE_FARE     = 4800; // 기본요금 (1.6km)
+const TAXI_BASE_DIST_M   = 1600;
+const TAXI_DIST_UNIT_M   = 131;  // 131m당 100원
+const TAXI_DIST_UNIT_FARE = 100;
+const NIGHT_SURCHARGE_RATE = 0.2; // 심야할증 20%
+const NIGHT_START_HOUR = 22;      // 22:00~04:00
+const NIGHT_END_HOUR   = 4;
+
+function isNightSurcharge(ms: number): boolean {
+  const h = new Date(ms).getHours();
+  return h >= NIGHT_START_HOUR || h < NIGHT_END_HOUR;
+}
+
+// 실제 도로 거리(m) → 공식 요금표 + 심야할증 반영 택시비
+function calcTaxiFareByDistance(distanceM: number, departureMs: number): number {
+  let fare = TAXI_BASE_FARE;
+  if (distanceM > TAXI_BASE_DIST_M) {
+    fare += Math.ceil((distanceM - TAXI_BASE_DIST_M) / TAXI_DIST_UNIT_M) * TAXI_DIST_UNIT_FARE;
+  }
+  if (isNightSurcharge(departureMs)) {
+    fare = fare * (1 + NIGHT_SURCHARGE_RATE);
+  }
+  return Math.ceil(fare / 100) * 100; // 100원 단위 올림
+}
+
+// 두 좌표 간 택시비/소요시간을 Tmap 실주행 거리로 보정 (실패 시 직선거리 폴백)
+async function getRefinedTaxiFare(
+  startLat: number, startLng: number,
+  endLat: number, endLng: number,
+  departureMs: number,
+  fallbackDistKm: number,
+): Promise<{ cost: number; minutes: number }> {
+  const driving = await getDrivingDistance(startLat, startLng, endLat, endLng);
+  if (driving) {
+    return {
+      cost: calcTaxiFareByDistance(driving.distanceM, departureMs),
+      minutes: Math.max(1, Math.round(driving.durationSec / 60)),
+    };
+  }
+  return {
+    cost: calcTaxiFareByDistance(fallbackDistKm * 1000, departureMs),
+    minutes: calcDistanceTaxiMinutes(fallbackDistKm),
+  };
 }
 
 // 4km/h 도보 vs 25km/h 택시 → 약 84% 시간 단축
@@ -328,7 +374,7 @@ function buildSegments(path: any, baseMs: number): RouteSegment[] {
 }
 
 // ─── 하이브리드 경로 빌더 ─────────────────────────────────────────────────
-function buildTypedRoute(
+async function buildTypedRoute(
   path: any,
   strategy: HybridStrategy,
   slotIdx: number,
@@ -339,7 +385,7 @@ function buildTypedRoute(
   endLat: number,
   endLng: number,
   endLocName: string,
-): HybridRoute {
+): Promise<HybridRoute> {
   const info          = path.info;
   const totalCost     = info.payment || info.totalFare || 0;
   const totalDuration = info.totalTime || 0;
@@ -361,8 +407,22 @@ function buildTypedRoute(
   if (walkTaxiIdx !== null) {
     // ── Case A: 도보 구간을 택시로 대체 ──────────────────────────────────
     const orig = baseSegments[walkTaxiIdx];
-    taxiCostTotal  = calcWalkTaxiCost(orig.durationMinutes);
-    timeSavedTotal = calcTimeSavedByTaxi(orig.durationMinutes);
+    const origSub = (path.subPath || [])[walkTaxiIdx] || {};
+    const fallbackDistKm = (orig.durationMinutes / 60) * 4; // 도보 4km/h 추정
+    const sLat = Number(origSub.startY), sLng = Number(origSub.startX);
+    const eLat = Number(origSub.endY),   eLng = Number(origSub.endX);
+
+    let refinedFare: { cost: number; minutes: number };
+    if (sLat && sLng && eLat && eLng) {
+      refinedFare = await getRefinedTaxiFare(sLat, sLng, eLat, eLng, baseMs, fallbackDistKm);
+    } else {
+      refinedFare = {
+        cost: calcTaxiFareByDistance(fallbackDistKm * 1000, baseMs),
+        minutes: calcDistanceTaxiMinutes(fallbackDistKm),
+      };
+    }
+    taxiCostTotal  = refinedFare.cost;
+    timeSavedTotal = Math.max(0, orig.durationMinutes - refinedFare.minutes);
     taxiBoardingPoint = orig.startName || orig.endName || '환승 지점';
 
     hybridSegments = baseSegments.map((s, i) => {
@@ -376,7 +436,7 @@ function buildTypedRoute(
         ...s,
         type: 'taxi' as const,
         cost: taxiCostTotal,
-        durationMinutes: Math.max(1, orig.durationMinutes - timeSavedTotal),
+        durationMinutes: refinedFare.minutes,
         instruction: taxiInstruction,
         alightInstruction: undefined,
       };
@@ -390,8 +450,16 @@ function buildTypedRoute(
     const tp = selectTransferPoint(path, endLat, endLng, strategy, timeMode);
 
     if (tp) {
-      taxiCostTotal  = tp.taxiCost;
-      timeSavedTotal = Math.max(0, tp.timeSaved);
+      // Tmap 실주행 거리로 택시비/시간 보정 (실패 시 직선거리 추정값 유지)
+      const refinedFare = await getRefinedTaxiFare(
+        tp.boardingLat, tp.boardingLng, endLat, endLng, baseMs, tp.distKm,
+      );
+      const remainingTime = (path.subPath || [])
+        .slice(tp.subPathIdx + 1)
+        .reduce((s: number, sp: any) => s + (sp.sectionTime || 0), 0);
+
+      taxiCostTotal  = refinedFare.cost;
+      timeSavedTotal = Math.max(0, remainingTime - refinedFare.minutes);
       taxiBoardingPoint = tp.boardingName || '환승 지점';
 
       // 해당 transit 구간까지만 유지하고 이후는 택시 1개로 대체
@@ -404,14 +472,14 @@ function buildTypedRoute(
       const taxiSegment: RouteSegment = {
         type: 'taxi',
         instruction: taxiInstruction,
-        durationMinutes: tp.taxiMin,
-        cost: tp.taxiCost,
+        durationMinutes: refinedFare.minutes,
+        cost: refinedFare.cost,
         startName: tp.boardingName,
         endName: endLocName,
         departureTime: lastKept?.arrivalTime ?? toHHMM(0),
         arrivalTime: toHHMM(
           (lastKept ? baseSegments.slice(0, tp.subPathIdx + 1).reduce((s, seg) => s + seg.durationMinutes, 0) : 0)
-          + tp.taxiMin,
+          + refinedFare.minutes,
         ),
       };
 
@@ -420,7 +488,7 @@ function buildTypedRoute(
       taxiSeg = {
         type: 'walk',
         instruction: '',
-        durationMinutes: tp.taxiMin,
+        durationMinutes: refinedFare.minutes,
         cost: 0,
         startName: tp.boardingName,
         endName: endLocName,
@@ -581,8 +649,14 @@ export const getOdsayTransitRoutes = async (
   }
   paths = uniquePaths;
 
-  const fullTaxiCost = 35000;
-  const baseMs       = departureDate ? departureDate.getTime() : Date.now();
+  const baseMs = departureDate ? departureDate.getTime() : Date.now();
+
+  // 전액 택시 비용: 실제 도로 주행거리 기반 (Tmap 실패 시 직선거리 추정 폴백)
+  const straightKm = haversineKm(startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon);
+  const fullTaxiFare = await getRefinedTaxiFare(
+    startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon, baseMs, straightKm,
+  );
+  const fullTaxiCost = fullTaxiFare.cost;
 
   if (excludeTaxi) {
     return {
@@ -620,13 +694,15 @@ export const getOdsayTransitRoutes = async (
   }
   while (chosen.length < 3) chosen.push(byTime[chosen.length % byTime.length]);
 
-  const routes = strategies.map((strategy, si) =>
-    buildTypedRoute(
-      chosen[si],
-      strategy, si, baseMs, fullTaxiCost,
-      effectiveWalkThreshold, timeMode,
-      endCoords.lat, endCoords.lon,
-      endLoc,
+  const routes = await Promise.all(
+    strategies.map((strategy, si) =>
+      buildTypedRoute(
+        chosen[si],
+        strategy, si, baseMs, fullTaxiCost,
+        effectiveWalkThreshold, timeMode,
+        endCoords.lat, endCoords.lon,
+        endLoc,
+      ),
     ),
   );
 

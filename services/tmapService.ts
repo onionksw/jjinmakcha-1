@@ -158,6 +158,49 @@ export const reverseGeocode = async (lat: number, lon: number): Promise<string> 
     return `현재위치`;
 };
 
+// ─── 실제 도로 주행 거리/시간 (택시 요금 산출용) ──────────────────────────
+const drivingCache = new Map<string, { distanceM: number; durationSec: number }>();
+
+export const getDrivingDistance = async (
+    startLat: number, startLon: number, endLat: number, endLon: number,
+): Promise<{ distanceM: number; durationSec: number } | null> => {
+    const key = `${startLat.toFixed(5)},${startLon.toFixed(5)}->${endLat.toFixed(5)},${endLon.toFixed(5)}`;
+    if (drivingCache.has(key)) return drivingCache.get(key)!;
+
+    try {
+        const appKey = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (!appKey) return null;
+        const res = await fetch('https://apis.openapi.sk.com/tmap/routes?version=1', {
+            method: 'POST',
+            headers: { appKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                startX: String(startLon),
+                startY: String(startLat),
+                endX: String(endLon),
+                endY: String(endLat),
+                reqCoordType: 'WGS84GEO',
+                resCoordType: 'WGS84GEO',
+                searchOption: '0',
+            }),
+        });
+        const data = await res.json();
+        const features: any[] = data.features || [];
+        let distanceM: number | undefined;
+        let durationSec: number | undefined;
+        for (const f of features) {
+            if (distanceM == null && f.properties?.totalDistance != null) distanceM = Number(f.properties.totalDistance);
+            if (durationSec == null && f.properties?.totalTime != null) durationSec = Number(f.properties.totalTime);
+            if (distanceM != null && durationSec != null) break;
+        }
+        if (distanceM != null && durationSec != null) {
+            const result = { distanceM, durationSec };
+            drivingCache.set(key, result);
+            return result;
+        }
+    } catch {}
+    return null;
+};
+
 // 주소를 좌표로 변환 (캐시 → TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
     // 장소 선택 시 미리 캐시된 좌표 우선
