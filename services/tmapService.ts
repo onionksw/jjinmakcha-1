@@ -201,6 +201,57 @@ export const getDrivingDistance = async (
     return null;
 };
 
+// ─── 실제 보행 거리/시간 (도보 구간 정확도 산출용) ─────────────────────────
+const walkingCache = new Map<string, { distanceM: number; durationSec: number }>();
+
+export const getWalkingRoute = async (
+    startLat: number, startLon: number, endLat: number, endLon: number,
+): Promise<{ distanceM: number; durationSec: number } | null> => {
+    const key = `${startLat.toFixed(5)},${startLon.toFixed(5)}->${endLat.toFixed(5)},${endLon.toFixed(5)}`;
+    if (walkingCache.has(key)) return walkingCache.get(key)!;
+
+    try {
+        const appKey = (import.meta.env.VITE_TMAP_APP_KEY || '').trim();
+        if (!appKey) return null;
+        const res = await fetch('https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1', {
+            method: 'POST',
+            headers: { appKey, 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                startX: String(startLon),
+                startY: String(startLat),
+                endX: String(endLon),
+                endY: String(endLat),
+                startName: '출발',
+                endName: '도착',
+                reqCoordType: 'WGS84GEO',
+                resCoordType: 'WGS84GEO',
+                searchOption: '0',
+            }),
+        });
+        const data = await res.json();
+        const features: any[] = data.features || [];
+        let distanceM: number | undefined;
+        let durationSec: number | undefined;
+        for (const f of features) {
+            if (distanceM == null && f.properties?.totalDistance != null) distanceM = Number(f.properties.totalDistance);
+            if (durationSec == null && f.properties?.totalTime != null) durationSec = Number(f.properties.totalTime);
+            if (distanceM != null && durationSec != null) break;
+        }
+        if (distanceM != null && durationSec != null) {
+            const result = { distanceM, durationSec };
+            walkingCache.set(key, result);
+            return result;
+        }
+    } catch {}
+    return null;
+};
+
+// ─── 좌표가 서울시 경계 내부인지 판별 (시계외 할증 산출용, 근사 bbox) ──────
+export const isOutsideSeoul = (lat: number, lon: number): boolean => {
+    const SEOUL_BBOX = { latMin: 37.413, latMax: 37.715, lonMin: 126.764, lonMax: 127.183 };
+    return lat < SEOUL_BBOX.latMin || lat > SEOUL_BBOX.latMax || lon < SEOUL_BBOX.lonMin || lon > SEOUL_BBOX.lonMax;
+};
+
 // 주소를 좌표로 변환 (캐시 → TMAP주소 → OSM → TMAP POI)
 export const getCoordinates = async (keyword: string): Promise<{ lat: number, lon: number } | null> => {
     // 장소 선택 시 미리 캐시된 좌표 우선

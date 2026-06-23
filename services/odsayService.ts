@@ -1,5 +1,5 @@
 import { HybridRoute, RouteSegment } from '../types';
-import { getCoordinates, getDrivingDistance } from './tmapService';
+import { getCoordinates, getDrivingDistance, getWalkingRoute, isOutsideSeoul } from './tmapService';
 import { isPathRunnable } from './transitScheduleService';
 
 type HybridStrategy = 'time-saving' | 'cost-saving' | 'balanced';
@@ -58,13 +58,17 @@ function getNightSurchargeRate(ms: number): number {
   return 0;
 }
 
-// 실제 도로 거리(m) → 공식 요금표 + 심야할증 반영 택시비
-function calcTaxiFareByDistance(distanceM: number, departureMs: number): number {
+// 시계외 할증: 출발 또는 도착이 서울시 경계 밖이면 20% (심야할증과 중복 적용 시 가산)
+const OUT_OF_CITY_SURCHARGE_RATE = 0.2;
+
+// 실제 도로 거리(m) → 공식 요금표 + 심야할증/시계외할증 반영 택시비
+function calcTaxiFareByDistance(distanceM: number, departureMs: number, outsideSeoul: boolean = false): number {
   let fare = TAXI_BASE_FARE;
   if (distanceM > TAXI_BASE_DIST_M) {
     fare += Math.ceil((distanceM - TAXI_BASE_DIST_M) / TAXI_DIST_UNIT_M) * TAXI_DIST_UNIT_FARE;
   }
-  fare = fare * (1 + getNightSurchargeRate(departureMs));
+  const surchargeRate = getNightSurchargeRate(departureMs) + (outsideSeoul ? OUT_OF_CITY_SURCHARGE_RATE : 0);
+  fare = fare * (1 + surchargeRate);
   return Math.ceil(fare / 100) * 100; // 100원 단위 올림
 }
 
@@ -75,15 +79,16 @@ async function getRefinedTaxiFare(
   departureMs: number,
   fallbackDistKm: number,
 ): Promise<{ cost: number; minutes: number }> {
+  const outsideSeoul = isOutsideSeoul(startLat, startLng) || isOutsideSeoul(endLat, endLng);
   const driving = await getDrivingDistance(startLat, startLng, endLat, endLng);
   if (driving) {
     return {
-      cost: calcTaxiFareByDistance(driving.distanceM, departureMs),
+      cost: calcTaxiFareByDistance(driving.distanceM, departureMs, outsideSeoul),
       minutes: Math.max(1, Math.round(driving.durationSec / 60)),
     };
   }
   return {
-    cost: calcTaxiFareByDistance(fallbackDistKm * 1000, departureMs),
+    cost: calcTaxiFareByDistance(fallbackDistKm * 1000, departureMs, outsideSeoul),
     minutes: calcDistanceTaxiMinutes(fallbackDistKm),
   };
 }
@@ -307,7 +312,7 @@ function generateTaxiJustification(
 }
 
 // ─── 세그먼트 빌더 (공통) ─────────────────────────────────────────────────
-function buildSegments(path: any, baseMs: number): RouteSegment[] {
+async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]> {
   const toHHMM = makeToHHMM(baseMs);
   let elapsed = 0;
 
@@ -329,6 +334,16 @@ function buildSegments(path: any, baseMs: number): RouteSegment[] {
         seg.endName = rawSegs[i + 1].startName || rawSegs[i + 1].endName;
     }
   });
+
+  // 도보 구간은 Tmap 보행자 길찾기로 실제 소요시간 보정 (좌표 있을 때만, 실패 시 ODsay 추정치 유지)
+  await Promise.all(rawSegs.map(async (seg) => {
+    if (seg.type !== 'walk') return;
+    const sLat = Number(seg.sub.startY), sLng = Number(seg.sub.startX);
+    const eLat = Number(seg.sub.endY),   eLng = Number(seg.sub.endX);
+    if (!sLat || !sLng || !eLat || !eLng) return;
+    const walking = await getWalkingRoute(sLat, sLng, eLat, eLng);
+    if (walking) seg.duration = Math.max(1, Math.round(walking.durationSec / 60));
+  }));
 
   return rawSegs.map(({ type, duration, lineName, busNos, startName, endName, sub }) => {
     let instruction = '';
@@ -390,7 +405,7 @@ async function buildTypedRoute(
   const toHHMM        = makeToHHMM(baseMs);
   const label         = ROUTE_LABELS[timeMode][strategy];
 
-  const baseSegments = buildSegments(path, baseMs);
+  const baseSegments = await buildSegments(path, baseMs);
 
   // ── 경로당 택시 1회: 도보 대체 or 환승 지점 택시 ────────────────────────
   const walkTaxiIdx = selectWalkTaxiIndex(baseSegments, strategy, walkThreshold, timeMode);
@@ -548,12 +563,12 @@ async function buildTypedRoute(
 }
 
 // ─── 순수 대중교통 경로 빌더 (택시 제외 모드) ────────────────────────────
-function buildPureRoute(path: any, pathIdx: number, baseMs: number, fullTaxiCost: number): HybridRoute {
+async function buildPureRoute(path: any, pathIdx: number, baseMs: number, fullTaxiCost: number): Promise<HybridRoute> {
   const info          = path.info;
   const totalCost     = info.payment || info.totalFare || 0;
   const totalDuration = info.totalTime || 0;
   const toHHMM        = makeToHHMM(baseMs);
-  const segments      = buildSegments(path, baseMs);
+  const segments      = await buildSegments(path, baseMs);
 
   const lastTransit   = [...segments].reverse().find(s => s.type !== 'walk');
   const transferPoint = lastTransit?.endName || '도착지 인근';
@@ -658,7 +673,7 @@ export const getOdsayTransitRoutes = async (
 
   if (excludeTaxi) {
     return {
-      routes: paths.slice(0, 3).map((p, i) => buildPureRoute(p, i, baseMs, fullTaxiCost)),
+      routes: await Promise.all(paths.slice(0, 3).map((p, i) => buildPureRoute(p, i, baseMs, fullTaxiCost))),
       fullTaxiCost,
     };
   }
