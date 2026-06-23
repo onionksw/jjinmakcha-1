@@ -267,8 +267,10 @@ export default defineConfig(({ mode }) => {
                                 const arsId = stations[0].arsId;
                                 const foundName = stations[0].stNm || stationName;
 
-                                // 2. arsId → 도착 정보 (전체 버스 — getLowArrInfoByStId는 저상버스만 조회되어 제외)
-                                const arrUrl = `${SEOUL_BUS_BASE}/arrive/getArrInfoByStId?serviceKey=${SEOUL_BUS_KEY}&arsId=${arsId}&resultType=json`;
+                                // 2. arsId → 도착 정보
+                                // 공식 활용가이드 기준 stId만으로 조회 가능한 전체버스용 함수가 없고
+                                // getLowArrInfoByStIdList(저상버스 한정)만 존재함
+                                const arrUrl = `${SEOUL_BUS_BASE}/arrive/getLowArrInfoByStId?serviceKey=${SEOUL_BUS_KEY}&arsId=${arsId}&resultType=json`;
                                 const arrRes = await fetch(arrUrl);
                                 const arrData = await arrRes.json();
                                 let arrivals = toSeoulItems(arrData).map((item: any) => ({
