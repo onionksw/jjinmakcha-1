@@ -49,13 +49,13 @@ const TAXI_BASE_FARE     = 4800; // 기본요금 (1.6km)
 const TAXI_BASE_DIST_M   = 1600;
 const TAXI_DIST_UNIT_M   = 131;  // 131m당 100원
 const TAXI_DIST_UNIT_FARE = 100;
-const NIGHT_SURCHARGE_RATE = 0.2; // 심야할증 20%
-const NIGHT_START_HOUR = 22;      // 22:00~04:00
-const NIGHT_END_HOUR   = 4;
 
-function isNightSurcharge(ms: number): boolean {
+// 심야할증 2단계: 22~23시·02~04시 20%, 23~02시(가장 심야) 40%
+function getNightSurchargeRate(ms: number): number {
   const h = new Date(ms).getHours();
-  return h >= NIGHT_START_HOUR || h < NIGHT_END_HOUR;
+  if (h >= 23 || h < 2) return 0.4;          // 23:00~02:00
+  if ((h >= 22 && h < 23) || (h >= 2 && h < 4)) return 0.2; // 22:00~23:00, 02:00~04:00
+  return 0;
 }
 
 // 실제 도로 거리(m) → 공식 요금표 + 심야할증 반영 택시비
@@ -64,9 +64,7 @@ function calcTaxiFareByDistance(distanceM: number, departureMs: number): number 
   if (distanceM > TAXI_BASE_DIST_M) {
     fare += Math.ceil((distanceM - TAXI_BASE_DIST_M) / TAXI_DIST_UNIT_M) * TAXI_DIST_UNIT_FARE;
   }
-  if (isNightSurcharge(departureMs)) {
-    fare = fare * (1 + NIGHT_SURCHARGE_RATE);
-  }
+  fare = fare * (1 + getNightSurchargeRate(departureMs));
   return Math.ceil(fare / 100) * 100; // 100원 단위 올림
 }
 
