@@ -185,6 +185,54 @@
     display: block;
   }
 
+  /* ───────── 공감 시나리오 카드 ───────── */
+  .story-section { padding: 8px 0 8px; }
+  .story-card {
+    background: linear-gradient(160deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%);
+    border-radius: 28px;
+    padding: 36px 24px;
+    color: #fff;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .story-time {
+    display: inline-block;
+    font-size: 13px;
+    background: rgba(255,255,255,0.12);
+    padding: 6px 16px;
+    border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  .story-line {
+    font-size: 15px;
+    line-height: 1.75;
+    color: rgba(255,255,255,0.85);
+    margin-bottom: 14px;
+  }
+  .story-line.accent {
+    color: var(--brand-yellow);
+    font-size: 17px;
+    margin-top: 10px;
+    margin-bottom: 0;
+  }
+  .story-bubble {
+    display: inline-block;
+    max-width: 320px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 12px 18px;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 4px auto;
+  }
+  .story-bubble.result {
+    background: rgba(76,201,240,0.18);
+    color: var(--brand-blue);
+    font-weight: bold;
+  }
+  .story-arrow { font-size: 18px; opacity: 0.35; margin: 2px 0; }
+
   /* ───────── 섹션 공통 ───────── */
   section { padding: 56px 0; }
   .section-alt { background: #F7F8FA; }
@@ -364,6 +412,17 @@
   </div>
 
   <div class="wrap">
+
+    <section class="story-section">
+      <div class="story-card">
+        <span class="story-time">🌙 밤 11시 50분</span>
+        <p class="story-line">분위기 한창 달아오르는데<br/>폰 화면엔 "막차 17분 전"</p>
+        <div class="story-bubble">"택시 타면 만오천원인데...<br/>그냥 더 놀까?"</div>
+        <div class="story-arrow">↓</div>
+        <div class="story-bubble result">찐막차 켜보니<br/>9,200원에 17분 더 놀 수 있대!</div>
+        <p class="story-line accent">😌 그래, 한 잔만 더 마시자</p>
+      </div>
+    </section>
 
     <section>
       <div class="center-head">
