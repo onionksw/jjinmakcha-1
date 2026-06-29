@@ -21,6 +21,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const stations = toItems(stationData);
 
     if (stations.length === 0) {
+      if (req.query.debug) return res.json({ stationName, arsId: '', arrivals: [], _debug: stationData });
       return res.json({ stationName, arsId: '', arrivals: [] });
     }
 
