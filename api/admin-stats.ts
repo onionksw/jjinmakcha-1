@@ -32,16 +32,16 @@ async function getToken(): Promise<string> {
     });
 }
 
-function emptyDaily() {
-  return Array.from({ length: 7 }, (_, i) => {
+function emptyDaily(days: number) {
+  return Array.from({ length: days }, (_, i) => {
     const d = new Date();
-    d.setDate(d.getDate() - (6 - i));
+    d.setDate(d.getDate() - (days - 1 - i));
     return { date: d.toISOString().slice(0, 10), count: 0 };
   });
 }
 
-function emptyResponse(notice: string) {
-  return { totals: { visit: 0, search: 0, signup: 0, taxi: 0 }, daily: { visit: emptyDaily(), search: emptyDaily() }, notice };
+function emptyResponse(notice: string, days: number = 7) {
+  return { totals: { visit: 0, search: 0, signup: 0, taxi: 0 }, daily: { visit: emptyDaily(days), search: emptyDaily(days) }, notice };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -52,8 +52,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const password = (req.query.password || req.body?.password) as string;
     if (password !== ADMIN_PASSWORD) return res.status(401).json({ error: '비밀번호가 틀렸습니다' });
 
+    const daysParam = (req.query.days as string) || '7';
+
     if (!SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
-      return res.json(emptyResponse('Google Sheets 환경변수 미설정'));
+      return res.json(emptyResponse('Google Sheets 환경변수 미설정', daysParam === 'all' ? 7 : Math.min(Math.max(parseInt(daysParam, 10) || 7, 1), 365)));
     }
 
     const token = await getToken();
@@ -75,9 +77,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       dailyMap[date][ev as EventKey]++;
     }
 
+    // days=all이면 가장 오래된 로그 날짜까지, 아니면 요청한 일수만큼 (최대 365일)
+    let rangeDays: number;
+    if (daysParam === 'all') {
+      const allDates = Object.keys(dailyMap).sort();
+      if (allDates.length === 0) {
+        rangeDays = 7;
+      } else {
+        const earliest = new Date(allDates[0]);
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        rangeDays = Math.max(1, Math.round((todayMidnight.getTime() - earliest.getTime()) / 86400000) + 1);
+      }
+    } else {
+      rangeDays = Math.min(Math.max(parseInt(daysParam, 10) || 7, 1), 365);
+    }
+
     const visitDaily: { date: string; count: number }[] = [];
     const searchDaily: { date: string; count: number }[] = [];
-    for (let i = 6; i >= 0; i--) {
+    for (let i = rangeDays - 1; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const date = d.toISOString().slice(0, 10);

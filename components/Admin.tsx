@@ -18,6 +18,8 @@ const StatCard = ({ label, value, color }: { label: string; value: number; color
 
 const formatDate = (d: string) => d.slice(5); // "MM-DD"
 
+const rangeLabel = (days: string) => days === 'all' ? '전체' : `최근 ${days}일`;
+
 export default function Admin() {
   const [password, setPassword] = useState('');
   const [authed, setAuthed] = useState(false);
@@ -27,6 +29,7 @@ export default function Admin() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [diagLog, setDiagLog] = useState<string[]>([]);
   const [diagLoading, setDiagLoading] = useState(false);
+  const [daysRange, setDaysRange] = useState('7');
 
   const runDiag = async () => {
     setDiagLoading(true);
@@ -46,11 +49,11 @@ export default function Admin() {
     }
   };
 
-  const fetchStats = useCallback(async (pw: string) => {
+  const fetchStats = useCallback(async (pw: string, days: string = daysRange) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/admin-stats?password=${encodeURIComponent(pw)}`);
+      const res = await fetch(`/api/admin-stats?password=${encodeURIComponent(pw)}&days=${encodeURIComponent(days)}`);
       if (res.status === 401) { setError('비밀번호가 틀렸습니다'); setAuthed(false); return; }
       const text = await res.text();
       let data: Stats & { notice?: string; error?: string };
@@ -70,11 +73,38 @@ export default function Admin() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [daysRange]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     fetchStats(password);
+  };
+
+  const handleRangeChange = (days: string) => {
+    setDaysRange(days);
+    fetchStats(password, days);
+  };
+
+  const downloadCSV = () => {
+    if (!stats) return;
+    const dateMap: Record<string, { visit: number; search: number }> = {};
+    stats.daily.visit.forEach(d => { dateMap[d.date] = { visit: d.count, search: 0 }; });
+    stats.daily.search.forEach(d => {
+      if (!dateMap[d.date]) dateMap[d.date] = { visit: 0, search: 0 };
+      dateMap[d.date].search = d.count;
+    });
+    const rows = [['날짜', '방문자수', '경로찾기수']];
+    Object.keys(dateMap).sort().forEach(date => {
+      rows.push([date, String(dateMap[date].visit), String(dateMap[date].search)]);
+    });
+    const csv = rows.map(r => r.join(',')).join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `찐막차_통계_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   useEffect(() => {
@@ -140,6 +170,24 @@ export default function Admin() {
           </p>
         </div>
         <div className="flex gap-2">
+          <select
+            value={daysRange}
+            onChange={e => handleRangeChange(e.target.value)}
+            className="px-3 py-2 bg-gray-50 border border-gray-200 text-gray-700 font-bold text-sm rounded-xl transition-colors"
+          >
+            <option value="7">최근 7일</option>
+            <option value="14">최근 14일</option>
+            <option value="30">최근 30일</option>
+            <option value="90">최근 90일</option>
+            <option value="all">전체</option>
+          </select>
+          <button
+            onClick={downloadCSV}
+            disabled={!stats}
+            className="px-4 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-bold text-sm rounded-xl transition-colors disabled:opacity-50"
+          >
+            ⬇ 다운로드
+          </button>
           <button
             onClick={() => fetchStats(password)}
             disabled={loading}
@@ -194,7 +242,7 @@ export default function Admin() {
 
         {/* 일별 방문자 차트 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">최근 7일 방문자</h2>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">{rangeLabel(daysRange)} 방문자</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={(stats?.daily.visit ?? []).map(d => ({ ...d, date: formatDate(d.date) }))}>
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
@@ -210,7 +258,7 @@ export default function Admin() {
 
         {/* 일별 경로찾기 차트 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
-          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">최근 7일 경로 찾기</h2>
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">{rangeLabel(daysRange)} 경로 찾기</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={(stats?.daily.search ?? []).map(d => ({ ...d, date: formatDate(d.date) }))}>
               <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
