@@ -4,7 +4,8 @@ const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
 
 const toItems = (data: any): any[] => {
-  const items = data?.ServiceResult?.msgBody?.itemList;
+  // JSON 응답은 XML과 달리 ServiceResult 래퍼가 없음
+  const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
   if (!items) return [];
   return Array.isArray(items) ? items : [items];
 };

@@ -249,7 +249,8 @@ export default defineConfig(({ mode }) => {
                             const stationName = params.get('stationName') || '';
                             const routeNo = params.get('routeNo') || '';
                             const toSeoulItems = (data: any): any[] => {
-                                const items = data?.ServiceResult?.msgBody?.itemList;
+                                // JSON 응답은 XML과 달리 ServiceResult 래퍼가 없음
+                                const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
                                 if (!items) return [];
                                 return Array.isArray(items) ? items : [items];
                             };
