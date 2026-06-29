@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 interface Stats {
   totals: { visit: number; search: number; signup: number; taxi: number };
@@ -7,6 +7,10 @@ interface Stats {
     visit: { date: string; count: number }[];
     search: { date: string; count: number }[];
   };
+  hourly?: { hour: number; count: number }[];
+  weekday?: { day: string; count: number }[];
+  funnel?: { visitToSignup: number; signupToSearch: number; searchToTaxi: number };
+  growth?: { visit: { current: number; previous: number; pct: number } };
 }
 
 const StatCard = ({ label, value, color }: { label: string; value: number; color: string }) => (
@@ -16,9 +20,23 @@ const StatCard = ({ label, value, color }: { label: string; value: number; color
   </div>
 );
 
+const FunnelStep = ({ label, rate, color }: { label: string; rate: number; color: string }) => (
+  <div className="flex-1 text-center">
+    <div className={`text-2xl font-black ${color}`}>{rate}%</div>
+    <div className="text-xs text-gray-400 font-bold mt-1">{label}</div>
+  </div>
+);
+
 const formatDate = (d: string) => d.slice(5); // "MM-DD"
 
 const rangeLabel = (days: string) => days === 'all' ? '전체' : `최근 ${days}일`;
+
+// API는 일~토(일요일 시작) 순서로 반환 → 월~일 순서로 재배열
+const weekdayOrdered = (weekday?: { day: string; count: number }[]) => {
+  if (!weekday || weekday.length !== 7) return [];
+  const [sun, ...rest] = weekday;
+  return [...rest, sun];
+};
 
 export default function Admin() {
   const [password, setPassword] = useState('');
@@ -240,6 +258,36 @@ export default function Admin() {
           </div>
         </div>
 
+        {/* 성장률 + 전환율 */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* 직전 동일 기간 대비 방문자 성장률 */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">
+              직전 {daysRange === 'all' ? '동일' : daysRange} 기간 대비 방문자
+            </h2>
+            {stats?.growth ? (
+              <div className="flex items-end gap-3">
+                <span className={`text-3xl font-black ${stats.growth.visit.pct >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {stats.growth.visit.pct >= 0 ? '▲' : '▼'} {Math.abs(stats.growth.visit.pct)}%
+                </span>
+                <span className="text-xs text-gray-400 pb-1">
+                  {stats.growth.visit.previous.toLocaleString()} → {stats.growth.visit.current.toLocaleString()}명
+                </span>
+              </div>
+            ) : <span className="text-gray-300 text-sm">데이터 없음</span>}
+          </div>
+
+          {/* 전환율 퍼널 (전체 누적 기준) */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">전환율 (누적)</h2>
+            <div className="flex">
+              <FunnelStep label="방문→가입" rate={stats?.funnel?.visitToSignup ?? 0} color="text-blue-600" />
+              <FunnelStep label="가입→검색" rate={stats?.funnel?.signupToSearch ?? 0} color="text-purple-600" />
+              <FunnelStep label="검색→택시" rate={stats?.funnel?.searchToTaxi ?? 0} color="text-orange-600" />
+            </div>
+          </div>
+        </div>
+
         {/* 일별 방문자 차트 */}
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">{rangeLabel(daysRange)} 방문자</h2>
@@ -268,6 +316,44 @@ export default function Admin() {
                 cursor={{ fill: '#f0fdf4' }}
               />
               <Bar dataKey="count" name="경로 찾기" fill="#22c55e" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 시간대별 사용 패턴 (KST) — 새벽 막차 시간대 집중도 확인용 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-1">{rangeLabel(daysRange)} 시간대별 경로 검색</h2>
+          <p className="text-xs text-gray-400 mb-4">새벽 시간대 사용 비중을 확인해보세요 (한국시간 기준)</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={(stats?.hourly ?? []).map(d => ({ ...d, label: `${d.hour}시` }))}>
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} interval={1} />
+              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 13 }}
+                cursor={{ fill: '#f5f3ff' }}
+              />
+              <Bar dataKey="count" name="검색" radius={[6, 6, 0, 0]}>
+                {(stats?.hourly ?? []).map((d, i) => (
+                  <Cell key={i} fill={(d.hour >= 22 || d.hour < 4) ? '#845EC2' : '#C4B5FD'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="text-xs text-gray-300 mt-2">🌙 보라색 = 심야 시간대(22시~04시)</p>
+        </div>
+
+        {/* 요일별 사용 패턴 */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm">
+          <h2 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-4">{rangeLabel(daysRange)} 요일별 경로 검색</h2>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={weekdayOrdered(stats?.weekday)}>
+              <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <Tooltip
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', fontSize: 13 }}
+                cursor={{ fill: '#fff7ed' }}
+              />
+              <Bar dataKey="count" name="검색" fill="#f97316" radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
