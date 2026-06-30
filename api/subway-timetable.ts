@@ -60,7 +60,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .sort((a: any, b: any) => a.minutesLeft - b.minutesLeft)
       .slice(0, 8);
 
-    return res.json({ trains: all });
+    const uRows = toRows(uData);
+    const dRows = toRows(dData);
+    if (uRows.length === 0 && dRows.length === 0) {
+      console.warn('[시간표] 행 없음 — API 응답:', JSON.stringify(uData).slice(0, 200));
+    }
+    return res.json({ trains: all, _debug: { uRows: uRows.length, dRows: dRows.length } });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }

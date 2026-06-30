@@ -32,7 +32,10 @@ export const getSubwayTimetable = async (
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     const res = await fetch(`/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
     const data = await res.json();
-    if (!data.trains) return [];
+    if (!data.trains) {
+      console.warn('[시간표] 응답 없음:', { station: clean, subwayId, data });
+      return [];
+    }
 
     let trains = data.trains as { arrivalTime: string; minutesLeft: number; destination: string; direction: string }[];
 
@@ -100,8 +103,12 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
           minutesLeft = Number(minMatch[1]);
           const d = new Date(now + minutesLeft * 60000);
           arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        } else {
+          // "곧 도착" / "진입" 등 — 열차가 지금 도착 중이므로 현재 시각을 표시
+          minutesLeft = 0;
+          const d = new Date(now);
+          arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
         }
-        // minMatch 없으면 minutesLeft=0, arrivalTime='' → "곧 도착"
       }
 
       return {
