@@ -34,12 +34,24 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
     const now = Date.now();
     return data.realtimeArrivalList.slice(0, 4).map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
-      const minutesLeft = barvlDt > 0 ? Math.max(0, Math.round(barvlDt / 60)) : 0;
+      let minutesLeft = 0;
       let arrivalTime = '';
+
       if (barvlDt > 0) {
+        minutesLeft = Math.max(0, Math.round(barvlDt / 60));
         const d = new Date(now + barvlDt * 1000);
         arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      } else {
+        // barvlDt=0일 때 arvlMsg2에서 분 추출 ("2분 후[3번째 전역]" 등)
+        const minMatch = (item.arvlMsg2 || '').match(/(\d+)분/);
+        if (minMatch) {
+          minutesLeft = Number(minMatch[1]);
+          const d = new Date(now + minutesLeft * 60000);
+          arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+        }
+        // minMatch 없으면 minutesLeft=0, arrivalTime='' → "곧 도착"
       }
+
       return {
         line: item.subwayNm || SUBWAY_LINE_MAP[item.subwayId] || item.subwayId,
         destination: item.trainLineNm || '',
