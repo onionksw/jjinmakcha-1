@@ -1891,8 +1891,8 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            {/* 찐막차 시각 배너 */}
-            <div>
+            {/* 오늘의 찐막차 배너 — 히든 처리 */}
+            <div className="hidden">
             <div
                 onClick={() => ldtResult && setAppState(AppState.LDT_DETAIL)}
                 className={`rounded-3xl overflow-hidden shadow-lg relative cursor-pointer active:scale-[0.98] transition-transform ${ldtResult?.routeExistsNow === false ? 'bg-gray-800' : 'bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460]'}`}
@@ -1940,7 +1940,7 @@ const App: React.FC = () => {
                     )}
                 </div>
             </div>
-            </div>{/* 찐막차 시각 배너 끝 */}
+            </div>{/* 오늘의 찐막차 히든 끝 */}
 
             {filteredRoutes.length === 0 && routes.length > 0 && (
                 <div className="bg-white rounded-2xl p-5 text-center shadow-sm border border-gray-100">
@@ -1950,33 +1950,7 @@ const App: React.FC = () => {
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const firstWalkMinutes = route.segments[0]?.type === 'walk' ? route.segments[0].durationMinutes : 0;
-
-                // 막차까지 남은 분 계산 (카드별 코멘트용)
-                const minsToLastTrain = (() => {
-                    if (!ldtResult?.latestDepartureTime) return null;
-                    const [lh, lm] = ldtResult.latestDepartureTime.split(':').map(Number);
-                    const target = new Date();
-                    target.setHours(lh, lm, 0, 0);
-                    if (target.getTime() < Date.now()) {
-                        const passed = (Date.now() - target.getTime()) / 60000;
-                        if (passed > 240) target.setDate(target.getDate() + 1);
-                    }
-                    const diff = (target.getTime() - Date.now() - firstWalkMinutes * 60000) / 60000;
-                    return Math.max(0, Math.round(diff));
-                })();
-
-                const urgencyComment = (() => {
-                    if (minsToLastTrain === null) return '';
-                    if (minsToLastTrain < 5)  return '편의점도 못들려! 서둘러! 💦';
-                    if (minsToLastTrain < 15) return '화장실만 빠르게! 🏃';
-                    if (minsToLastTrain < 30) return '아쉬운데 한 잔만 더? 🍺';
-                    if (minsToLastTrain < 60) return '노래방 막곡 가능! 🎤';
-                    if (minsToLastTrain < 90) return '천천히 마셔도 됨 🐢';
-                    if (minsToLastTrain < 150) return '해장국 먹고 가도 되겠는데? 🍲';
-                    return '오늘은 길다~ 충분해! 🌙';
-                })();
-                const isUrgent = minsToLastTrain !== null && minsToLastTrain < 20;
-
+                const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index, firstWalkMinutes);
                 const arrDate = (() => {
                     const [dh, dm] = route.departureTime.split(':').map(Number);
                     const d = new Date();
@@ -2122,21 +2096,26 @@ const App: React.FC = () => {
                                 })}
                             </div>
 
-                            {/* 막차 카운트다운 + 코멘트 */}
-                            {ldtResult?.latestDepartureTime && (
-                                <div className={`mt-3 rounded-2xl px-4 py-3 flex items-center justify-between ${isUrgent ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
-                                    <div>
-                                        <p className="text-[10px] text-gray-400 font-bold mb-0.5">막차까지</p>
-                                        <Countdown targetTimeStr={ldtResult.latestDepartureTime} minutesBefore={firstWalkMinutes} />
-                                    </div>
-                                    {urgencyComment && (
-                                        <p className={`text-xs font-black text-right max-w-[140px] leading-tight ${isUrgent ? 'text-red-500' : 'text-gray-500'}`}>
-                                            {urgencyComment}
-                                        </p>
-                                    )}
+                            {/* 긴박도 배너 */}
+                            <div className={`rounded-2xl px-4 py-3 flex items-center gap-3 mb-4 ${urgent ? 'bg-red-50' : 'bg-blue-50'}`}>
+                                <Clock className={`w-4 h-4 shrink-0 ${urgent ? 'text-red-500 animate-pulse' : 'text-brandBlue'}`} />
+                                <div className="min-w-0">
+                                    <p className="text-[11px] text-gray-500 font-bold">
+                                        막차까지 <span className={`font-black ${urgent ? 'text-red-500' : 'text-gray-800'}`}>{timeText}</span> 남음
+                                    </p>
+                                    <p className={`text-sm font-black truncate ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
+                                        "{comment}"
+                                    </p>
                                 </div>
-                            )}
+                            </div>
 
+                            {/* 막차 카운트다운 */}
+                            <div className="border-t border-gray-100 pt-4">
+                                <p className="text-[10px] text-gray-400 font-bold mb-1">
+                                    막차 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
+                                </p>
+                                <Countdown targetTimeStr={ldtResult?.latestDepartureTime || route.departureTime} minutesBefore={firstWalkMinutes} />
+                            </div>
                         </div>
                     </div>
                 );
