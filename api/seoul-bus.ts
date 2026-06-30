@@ -3,7 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
 const ROUTE_KEY = process.env.SEOUL_BUS_ROUTE_API_KEY || KEY;
-const _BUILD = 'v6'; // 배포 버전 추적용
+const _BUILD = 'v7';
 
 const toItems = (data: any): any[] => {
   const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         }
       } catch (e: any) {
-        _routeDebug = { error: e.message };
+        if (!_routeDebug) _routeDebug = { error: e.message };
       }
     }
 
