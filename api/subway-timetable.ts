@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const KEY = process.env.SEOUL_SUBWAY_API_KEY || 'sample';
-const BASE = 'https://swopenAPI.seoul.go.kr/api/subway';
+const BASE = 'http://swopenAPI.seoul.go.kr/api/subway';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -76,7 +76,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .sort((a: any, b: any) => a.minutesLeft - b.minutesLeft)
       .slice(0, 8);
 
-    return res.json({ trains: all, _debug: { uRows: uRows.length, dRows: dRows.length, key: KEY.slice(0, 4) + '...' } });
+    const uResult = uData?.RESULT || uData?.SearchSTNTimeTableByIDService?.RESULT;
+    const dResult = dData?.RESULT || dData?.SearchSTNTimeTableByIDService?.RESULT;
+    return res.json({
+      trains: all,
+      _debug: {
+        uRows: uRows.length,
+        dRows: dRows.length,
+        key: KEY === 'sample' ? 'SAMPLE_KEY_NOT_SET' : KEY.slice(0, 4) + '...',
+        uResult,
+        dResult,
+        station: clean,
+        subwayId,
+      },
+    });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
