@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
 const ROUTE_KEY = process.env.SEOUL_BUS_ROUTE_API_KEY || KEY;
+const _BUILD = 'v6'; // 배포 버전 추적용
 
 const toItems = (data: any): any[] => {
   const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
@@ -94,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       arrivals = arrivals.filter((a: any) => a.routeNo.includes(routeNo));
     }
 
-    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData, _routeDebug, _allStopsDebug });
+    if (req.query.debug) return res.json({ _build: _BUILD, keyLen: ROUTE_KEY.length, keyPrefix: ROUTE_KEY.slice(0,4), stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData, _routeDebug, _allStopsDebug });
     res.json({ stationName: foundStationName, arsId, arrivals: arrivals.slice(0, 6) });
   } catch (e: any) {
     res.json({ error: e.message, arrivals: [] });
