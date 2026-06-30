@@ -26,7 +26,16 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
     try {
       if (type === 'subway') {
         const data = await getSubwayArrivals(stationName);
-        setSubwayData(data);
+        // 환승역에서 여러 호선이 섞여 나오므로 lineName으로 필터
+        // "수도권공항철도" ↔ "공항철도", "서울2호선" ↔ "2호선" 등 부분 일치 처리
+        const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
+        const filtered = lineName
+          ? data.filter(item => {
+              const a = norm(lineName), b = norm(item.line);
+              return a.includes(b) || b.includes(a);
+            })
+          : data;
+        setSubwayData(filtered);
       } else {
         // cityCode가 명시되지 않으면 좌표로 서울/경기/인천 등 자동 판별
         const resolvedCityCode = cityCode ?? (lat && lon ? await getTagoCityCode(lat, lon) : '11');
