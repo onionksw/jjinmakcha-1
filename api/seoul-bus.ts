@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
+const ROUTE_KEY = process.env.SEOUL_BUS_ROUTE_API_KEY || KEY;
 
 const toItems = (data: any): any[] => {
   const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
@@ -33,8 +34,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let _allStopsDebug: any = null;
     if (routeNo) {
       try {
-        // BusRouteInfoService.getBusRouteList → busRouteId 획득 (가이드 기준 정확한 엔드포인트명)
-        const routeUrl = `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
+        // BusRouteInfoService.getBusRouteList → busRouteId 획득 (노선정보조회 서비스 전용 키 사용)
+        const routeUrl = `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${ROUTE_KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
         const routeData = await (await fetch(routeUrl)).json();
         const routes = toItems(routeData);
         _routeDebug = { raw: routeData, routes };
