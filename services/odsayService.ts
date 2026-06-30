@@ -222,7 +222,7 @@ function selectTransferPoint(
     if (!lat || !lng) return;
 
     const distKm  = haversineKm(lat, lng, endLat, endLng);
-    if (distKm < 0.3) return; // 목적지 너무 가까우면 스킵
+    if (distKm < 1.5) return; // 1.5km 미만은 걷는 게 나으므로 택시 제외
 
     const taxiCost = calcDistanceTaxiCost(distKm);
     const taxiMin  = calcDistanceTaxiMinutes(distKm);

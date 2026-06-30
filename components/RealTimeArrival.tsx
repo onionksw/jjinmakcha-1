@@ -102,7 +102,9 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
         )
       ) : (
         busData.length === 0 ? (
-          <p className="text-xs text-gray-400 py-1">도착 예정 버스 없음</p>
+          <p className="text-xs text-gray-400 py-1">
+            {lineName ? `${lineName}번 실시간 정보 미제공 (광역·외곽 노선)` : '도착 예정 버스 없음'}
+          </p>
         ) : (
           <div className="space-y-1">
             {busData.map((item, i) => (

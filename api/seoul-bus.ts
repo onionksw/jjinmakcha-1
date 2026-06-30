@@ -4,7 +4,6 @@ const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
 
 const toItems = (data: any): any[] => {
-  // JSON 응답은 XML과 달리 ServiceResult 래퍼가 없음
   const items = data?.msgBody?.itemList ?? data?.ServiceResult?.msgBody?.itemList;
   if (!items) return [];
   return Array.isArray(items) ? items : [items];
@@ -14,31 +13,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { stationName, routeNo } = req.query as Record<string, string>;
 
   try {
-    // 1. 정류소명 → arsId
+    // 1. 정류소명 → stId(9자리 고유ID) + arsId(5자리 안내번호)
     const stationUrl = `${BASE}/stationinfo/getStationByName?serviceKey=${KEY}&stSrch=${encodeURIComponent(stationName)}&resultType=json`;
-    const stationRes = await fetch(stationUrl);
-    const stationData = await stationRes.json();
+    const stationData = await (await fetch(stationUrl)).json();
     const stations = toItems(stationData);
 
     if (stations.length === 0) {
-      if (req.query.debug) return res.json({ stationName, arsId: '', arrivals: [], _debug: stationData });
-      return res.json({ stationName, arsId: '', arrivals: [] });
+      return res.json({ stationName, arsId: '', arrivals: [], ...(req.query.debug ? { _debug: stationData } : {}) });
     }
 
+    // 가이드 기준: stId = 정류소 고유 ID (9자리), arsId = 정류소 안내번호 (5자리)
+    // 이전 버그: arsId(5자리)를 stId 파라미터 자리에 넘겨 도착 정보 조회 실패했음
+    const stId = stations[0].stId;
     const arsId = stations[0].arsId;
     const foundStationName = stations[0].stNm || stationName;
 
-    // 2. arsId → 도착 정보
-    // 공식 활용가이드 기준 "버스도착정보조회 서비스"에는 stId만으로 조회 가능한
-    // 전체버스용 함수가 없고, getLowArrInfoByStIdList(저상버스 한정)만 존재함
-    const arrUrl = `${BASE}/arrive/getLowArrInfoByStId?serviceKey=${KEY}&arsId=${arsId}&resultType=json`;
-    const arrRes = await fetch(arrUrl);
-    const arrData = await arrRes.json();
+    // 2. routeNo가 있으면 getArrInfoByRouteAllList로 전체버스 조회 (인천·경기 포함)
+    if (routeNo) {
+      try {
+        // BusRouteInfoService.getRouteByName → busRouteId 획득
+        const routeUrl = `${BASE}/busRouteInfo/getRouteByName?serviceKey=${KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
+        const routeData = await (await fetch(routeUrl)).json();
+        const routes = toItems(routeData);
+
+        const matched = routes.find((r: any) => r.busRouteNm === routeNo || r.rtNm === routeNo) ?? routes[0];
+
+        if (matched?.busRouteId) {
+          // getArrInfoByRouteAllList: 해당 노선 전 정류소 도착예정 — 인천(routeType=7), 경기(routeType=8) 포함
+          const allUrl = `${BASE}/arrive/getArrInfoByRouteAllList?serviceKey=${KEY}&busRouteId=${matched.busRouteId}&resultType=json`;
+          const allData = await (await fetch(allUrl)).json();
+          const allStops = toItems(allData);
+
+          // stId 또는 arsId 기준으로 우리 정류소 항목만 필터
+          const myStops = allStops.filter((item: any) =>
+            item.stId === stId || item.arsId === arsId
+          );
+
+          if (myStops.length > 0) {
+            const arrivals = myStops.map((item: any) => ({
+              routeNo: item.rtNm || routeNo,
+              arrMsg: item.arrmsg1 || '',
+              arrMsg2: item.arrmsg2 || '',
+              remainStop: parseInt(item.traTime1 ?? '0') || 0,
+              arrtime: 0,
+              routeType: item.routeType || '',
+            }));
+            if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals, _source: 'getArrInfoByRouteAllList' });
+            return res.json({ stationName: foundStationName, arsId, arrivals });
+          }
+        }
+      } catch (_) {
+        // BusRouteInfoService 미승인 또는 오류 시 fallback으로 진행
+      }
+    }
+
+    // 3. fallback: getLowArrInfoByStId (저상버스 전체 — stId 파라미터 버그 수정)
+    const arrUrl = `${BASE}/arrive/getLowArrInfoByStId?serviceKey=${KEY}&stId=${stId}&resultType=json`;
+    const arrData = await (await fetch(arrUrl)).json();
     let arrivals = toItems(arrData).map((item: any) => ({
       routeNo: item.rtNm || '',
       arrMsg: item.arrmsg1 || '',
       arrMsg2: item.arrmsg2 || '',
-      remainStop: 0,
+      remainStop: parseInt(item.traTime1 ?? '0') || 0,
       arrtime: 0,
     }));
 
@@ -46,6 +82,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       arrivals = arrivals.filter((a: any) => a.routeNo.includes(routeNo));
     }
 
+    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData });
     res.json({ stationName: foundStationName, arsId, arrivals: arrivals.slice(0, 6) });
   } catch (e: any) {
     res.json({ error: e.message, arrivals: [] });

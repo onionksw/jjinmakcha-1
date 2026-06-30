@@ -2111,8 +2111,10 @@ const App: React.FC = () => {
 
                             {/* 막차 카운트다운 */}
                             <div className="border-t border-gray-100 pt-4">
-                                <p className="text-[10px] text-gray-400 font-bold mb-1">막차 출발까지</p>
-                                <Countdown targetTimeStr={route.departureTime} />
+                                <p className="text-[10px] text-gray-400 font-bold mb-1">
+                                    막차 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
+                                </p>
+                                <Countdown targetTimeStr={route.departureTime} minutesBefore={firstWalkMinutes} />
                             </div>
                         </div>
                     </div>
