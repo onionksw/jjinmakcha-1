@@ -36,9 +36,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         // BusRouteInfoService.getBusRouteList → busRouteId 획득 (노선정보조회 서비스 전용 키 사용)
         const routeUrl = `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${ROUTE_KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
-        const routeData = await (await fetch(routeUrl)).json();
+        const routeRaw = await fetch(routeUrl);
+        const routeText = await routeRaw.text();
+        // HTML 응답이면 인증 실패 — 그대로 에러로 노출
+        if (routeText.trimStart().startsWith('<') && routeText.includes('DOCTYPE')) {
+          throw new Error(`busRouteInfo HTML 오류: ROUTE_KEY 길이=${ROUTE_KEY.length}, 앞4자=${ROUTE_KEY.slice(0,4)}`);
+        }
+        const routeData = JSON.parse(routeText);
         const routes = toItems(routeData);
-        _routeDebug = { raw: routeData, routes };
+        _routeDebug = { raw: routeData, routes, keyLen: ROUTE_KEY.length, keyPrefix: ROUTE_KEY.slice(0,4) };
 
         // busRouteAbrv = 안내용 노선명(예: "1200"), busRouteNm = DB관리용 노선명
         const matched = routes.find((r: any) => r.busRouteAbrv === routeNo || r.busRouteNm === routeNo) ?? routes[0];
