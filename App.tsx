@@ -1950,6 +1950,33 @@ const App: React.FC = () => {
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const firstWalkMinutes = route.segments[0]?.type === 'walk' ? route.segments[0].durationMinutes : 0;
+
+                // 막차까지 남은 분 계산 (카드별 코멘트용)
+                const minsToLastTrain = (() => {
+                    if (!ldtResult?.latestDepartureTime) return null;
+                    const [lh, lm] = ldtResult.latestDepartureTime.split(':').map(Number);
+                    const target = new Date();
+                    target.setHours(lh, lm, 0, 0);
+                    if (target.getTime() < Date.now()) {
+                        const passed = (Date.now() - target.getTime()) / 60000;
+                        if (passed > 240) target.setDate(target.getDate() + 1);
+                    }
+                    const diff = (target.getTime() - Date.now() - firstWalkMinutes * 60000) / 60000;
+                    return Math.max(0, Math.round(diff));
+                })();
+
+                const urgencyComment = (() => {
+                    if (minsToLastTrain === null) return '';
+                    if (minsToLastTrain < 5)  return '편의점도 못들려! 서둘러! 💦';
+                    if (minsToLastTrain < 15) return '화장실만 빠르게! 🏃';
+                    if (minsToLastTrain < 30) return '아쉬운데 한 잔만 더? 🍺';
+                    if (minsToLastTrain < 60) return '노래방 막곡 가능! 🎤';
+                    if (minsToLastTrain < 90) return '천천히 마셔도 됨 🐢';
+                    if (minsToLastTrain < 150) return '해장국 먹고 가도 되겠는데? 🍲';
+                    return '오늘은 길다~ 충분해! 🌙';
+                })();
+                const isUrgent = minsToLastTrain !== null && minsToLastTrain < 20;
+
                 const arrDate = (() => {
                     const [dh, dm] = route.departureTime.split(':').map(Number);
                     const d = new Date();
@@ -2094,6 +2121,21 @@ const App: React.FC = () => {
                                     );
                                 })}
                             </div>
+
+                            {/* 막차 카운트다운 + 코멘트 */}
+                            {ldtResult?.latestDepartureTime && (
+                                <div className={`mt-3 rounded-2xl px-4 py-3 flex items-center justify-between ${isUrgent ? 'bg-red-50 border border-red-100' : 'bg-gray-50 border border-gray-100'}`}>
+                                    <div>
+                                        <p className="text-[10px] text-gray-400 font-bold mb-0.5">막차까지</p>
+                                        <Countdown targetTimeStr={ldtResult.latestDepartureTime} minutesBefore={firstWalkMinutes} />
+                                    </div>
+                                    {urgencyComment && (
+                                        <p className={`text-xs font-black text-right max-w-[140px] leading-tight ${isUrgent ? 'text-red-500' : 'text-gray-500'}`}>
+                                            {urgencyComment}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
 
                         </div>
                     </div>
