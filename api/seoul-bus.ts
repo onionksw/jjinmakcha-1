@@ -29,12 +29,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const foundStationName = stations[0].stNm || stationName;
 
     // 2. routeNo가 있으면 getArrInfoByRouteAllList로 전체버스 조회 (인천·경기 포함)
+    let _routeDebug: any = null;
+    let _allStopsDebug: any = null;
     if (routeNo) {
       try {
         // BusRouteInfoService.getRouteByName → busRouteId 획득
         const routeUrl = `${BASE}/busRouteInfo/getRouteByName?serviceKey=${KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
         const routeData = await (await fetch(routeUrl)).json();
         const routes = toItems(routeData);
+        _routeDebug = { raw: routeData, routes };
 
         const matched = routes.find((r: any) => r.busRouteNm === routeNo || r.rtNm === routeNo) ?? routes[0];
 
@@ -43,6 +46,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const allUrl = `${BASE}/arrive/getArrInfoByRouteAllList?serviceKey=${KEY}&busRouteId=${matched.busRouteId}&resultType=json`;
           const allData = await (await fetch(allUrl)).json();
           const allStops = toItems(allData);
+          _allStopsDebug = { busRouteId: matched.busRouteId, totalStops: allStops.length, sampleStop: allStops[0] };
 
           // stId 또는 arsId 기준으로 우리 정류소 항목만 필터
           const myStops = allStops.filter((item: any) =>
@@ -58,12 +62,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               arrtime: 0,
               routeType: item.routeType || '',
             }));
-            if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals, _source: 'getArrInfoByRouteAllList' });
+            if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals, _source: 'getArrInfoByRouteAllList', _routeDebug, _allStopsDebug });
             return res.json({ stationName: foundStationName, arsId, arrivals });
           }
         }
-      } catch (_) {
-        // BusRouteInfoService 미승인 또는 오류 시 fallback으로 진행
+      } catch (e: any) {
+        _routeDebug = { error: e.message };
       }
     }
 
@@ -82,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       arrivals = arrivals.filter((a: any) => a.routeNo.includes(routeNo));
     }
 
-    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData });
+    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData, _routeDebug, _allStopsDebug });
     res.json({ stationName: foundStationName, arsId, arrivals: arrivals.slice(0, 6) });
   } catch (e: any) {
     res.json({ error: e.message, arrivals: [] });
