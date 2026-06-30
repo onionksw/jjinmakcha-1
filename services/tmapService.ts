@@ -253,7 +253,7 @@ export const isOutsideSeoul = (lat: number, lon: number): boolean => {
 };
 
 // ─── 좌표 → TAGO 시군구 코드 (버스 실시간 도착정보 조회용) ────────────────
-// 서울(11)·인천(22)·수도권 주요 시·군 코드 매핑
+// 서울(11)·인천(23)·수도권 주요 시·군 코드 매핑
 const TAGO_CITY_NAME_TO_CODE: Record<string, string> = {
     '수원시': '31010', '성남시': '31020', '의정부시': '31030', '안양시': '31040',
     '부천시': '31050', '광명시': '31060', '평택시': '31070', '동두천시': '31080',
@@ -280,7 +280,7 @@ export const getTagoCityCode = async (lat: number, lon: number): Promise<string>
             const info = data.addressInfo;
             const cityDo: string = info?.city_do || '';
             const guGun: string = info?.gu_gun || '';
-            if (cityDo.includes('인천')) code = '22';
+            if (cityDo.includes('인천')) code = '23';
             else if (!cityDo.includes('서울')) {
                 const matched = Object.entries(TAGO_CITY_NAME_TO_CODE).find(([name]) => guGun.includes(name));
                 if (matched) code = matched[1];
