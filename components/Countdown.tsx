@@ -3,7 +3,7 @@ import { Clock } from 'lucide-react';
 
 interface CountdownProps {
   targetTimeStr: string; // HH:MM
-  minutesBefore?: number; // 도보 등 선행 이동 시간 — 이 만큼 일찍 출발해야 함
+  minutesBefore?: number;
 }
 
 const Countdown: React.FC<CountdownProps> = ({ targetTimeStr, minutesBefore = 0 }) => {
@@ -18,35 +18,37 @@ const Countdown: React.FC<CountdownProps> = ({ targetTimeStr, minutesBefore = 0 
       const target = new Date();
       target.setHours(targetHours, targetMinutes, 0, 0);
 
-      // Handle crossing midnight
+      // 목표 시각이 이미 지났으면: 4시간 이내면 "막차 지남", 4시간 초과면 오늘 밤 막차로 간주해 다음날로
       if (target.getTime() < now.getTime()) {
-         if (now.getHours() > 20 && targetHours < 12) {
-             target.setDate(target.getDate() + 1);
-         }
+        const minutesPassed = (now.getTime() - target.getTime()) / 60000;
+        if (minutesPassed > 240) {
+          target.setDate(target.getDate() + 1);
+        }
       }
 
-      // 도보 시간만큼 일찍 출발해야 하므로 남은 시간에서 차감
       const diff = target.getTime() - now.getTime() - minutesBefore * 60000;
 
       if (diff <= 0) {
-        return minutesBefore > 0 ? '지금 출발!' : '곧 출발';
+        setIsUrgent(true);
+        // 목표 시각 자체가 이미 지난 경우 (막차 지남)
+        if (target.getTime() <= now.getTime()) return '막차 지남';
+        // 목표 시각은 미래이지만 도보 시간이 더 걸림 (지금 당장 출발)
+        return '지금 출발!';
       }
 
-      const minutes = Math.floor((diff / 1000) / 60);
-      const seconds = Math.floor((diff / 1000) % 60);
-      
-      // Urgent if less than 10 minutes
+      const minutes = Math.floor(diff / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      const hours = Math.floor(minutes / 60);
+      const mins = minutes % 60;
+
       setIsUrgent(minutes < 10);
 
-      return `${minutes}분 ${seconds}초`;
+      if (hours > 0) return `${hours}시간 ${mins}분`;
+      return `${mins}분 ${seconds}초`;
     };
 
-    const timer = setInterval(() => {
-      setTimeLeft(calculateTimeLeft());
-    }, 1000);
-
-    setTimeLeft(calculateTimeLeft()); // Initial call
-
+    const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+    setTimeLeft(calculateTimeLeft());
     return () => clearInterval(timer);
   }, [targetTimeStr, minutesBefore]);
 

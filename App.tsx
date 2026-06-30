@@ -2114,7 +2114,7 @@ const App: React.FC = () => {
                                 <p className="text-[10px] text-gray-400 font-bold mb-1">
                                     막차 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
                                 </p>
-                                <Countdown targetTimeStr={route.departureTime} minutesBefore={firstWalkMinutes} />
+                                <Countdown targetTimeStr={ldtResult?.latestDepartureTime || route.departureTime} minutesBefore={firstWalkMinutes} />
                             </div>
                         </div>
                     </div>
