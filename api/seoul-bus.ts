@@ -33,13 +33,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let _allStopsDebug: any = null;
     if (routeNo) {
       try {
-        // BusRouteInfoService.getRouteByName → busRouteId 획득
-        const routeUrl = `${BASE}/busRouteInfo/getRouteByName?serviceKey=${KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
+        // BusRouteInfoService.getBusRouteList → busRouteId 획득 (가이드 기준 정확한 엔드포인트명)
+        const routeUrl = `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`;
         const routeData = await (await fetch(routeUrl)).json();
         const routes = toItems(routeData);
         _routeDebug = { raw: routeData, routes };
 
-        const matched = routes.find((r: any) => r.busRouteNm === routeNo || r.rtNm === routeNo) ?? routes[0];
+        // busRouteAbrv = 안내용 노선명(예: "1200"), busRouteNm = DB관리용 노선명
+        const matched = routes.find((r: any) => r.busRouteAbrv === routeNo || r.busRouteNm === routeNo) ?? routes[0];
 
         if (matched?.busRouteId) {
           // getArrInfoByRouteAllList: 해당 노선 전 정류소 도착예정 — 인천(routeType=7), 경기(routeType=8) 포함
