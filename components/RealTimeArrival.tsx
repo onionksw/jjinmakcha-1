@@ -88,22 +88,15 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
         ) : (
           <div className="space-y-1">
             {subwayData.map((item, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <div className="flex items-center gap-1 min-w-0">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${tagBg}`}>{item.line}</span>
-                  <span className="text-xs text-gray-600 truncate">{item.destination}</span>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                  {item.arrivalTime && (
-                    <span className="text-[10px] text-gray-400 font-mono">{item.arrivalTime}</span>
-                  )}
-                  <span className={`text-xs font-black ${
-                    item.minutesLeft <= 1 ? 'text-brandPink' :
-                    item.minutesLeft <= 5 ? 'text-orange-500' : accent
-                  }`}>
-                    {item.minutesLeft === 0 ? '곧 도착' : `${item.minutesLeft}분`}
-                  </span>
-                </div>
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs font-mono text-gray-500 shrink-0 w-10">{item.arrivalTime || '--:--'}</span>
+                <span className="text-xs text-gray-700 font-bold flex-1 truncate">{item.destination}</span>
+                <span className={`text-xs font-black shrink-0 ${
+                  item.minutesLeft <= 1 ? 'text-brandPink' :
+                  item.minutesLeft <= 5 ? 'text-orange-500' : accent
+                }`}>
+                  {item.minutesLeft === 0 ? '곧 도착' : `${item.minutesLeft}분후`}
+                </span>
               </div>
             ))}
           </div>
