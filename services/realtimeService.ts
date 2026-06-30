@@ -104,10 +104,9 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
           const d = new Date(now + minutesLeft * 60000);
           arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
         } else {
-          // "곧 도착" / "진입" 등 — 열차가 지금 도착 중이므로 현재 시각을 표시
+          // "곧 도착" / "진입" 등 — 실제 시각 불명확, UI에서 "곧"으로 표시
           minutesLeft = 0;
-          const d = new Date(now);
-          arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+          arrivalTime = '';
         }
       }
 
