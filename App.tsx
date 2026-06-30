@@ -2441,6 +2441,7 @@ const App: React.FC = () => {
                                     type={segment.type}
                                     stationName={segment.startName}
                                     lineName={segment.lineName}
+                                    endName={segment.endName}
                                   />
                               )}
                               {segment.type === 'bus' && segment.startName && (

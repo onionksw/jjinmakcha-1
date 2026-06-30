@@ -5,6 +5,58 @@ const SUBWAY_LINE_MAP: Record<string, string> = {
   '1075': 'GTX-A', '1077': '신분당선', '1092': '우이신설선',
 };
 
+// lineName → subwayId 매핑 (ODsay 노선명 → 서울 API 코드)
+const LINE_NAME_TO_ID: Array<[string, string]> = [
+  ['공항철도', '1065'], ['신분당선', '1077'], ['경의중앙선', '1063'],
+  ['경춘선', '1067'], ['우이신설선', '1092'], ['GTX', '1075'],
+  ['9호선', '1009'], ['8호선', '1008'], ['7호선', '1007'], ['6호선', '1006'],
+  ['5호선', '1005'], ['4호선', '1004'], ['3호선', '1003'], ['2호선', '1002'], ['1호선', '1001'],
+];
+
+export const lineNameToSubwayId = (lineName: string): string | null => {
+  const norm = lineName.replace(/\s/g, '').replace(/^서울|^수도권/, '');
+  const match = LINE_NAME_TO_ID.find(([key]) => norm.includes(key) || key.includes(norm));
+  return match ? match[1] : null;
+};
+
+// 시간표 기반 지하철 도착 조회
+export const getSubwayTimetable = async (
+  stationName: string,
+  lineName: string,
+  endStationName?: string,  // 하차역 — 방향 필터에 사용
+): Promise<SubwayArrival[]> => {
+  const subwayId = lineNameToSubwayId(lineName);
+  if (!subwayId) return [];
+
+  try {
+    const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
+    const res = await fetch(`/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
+    const data = await res.json();
+    if (!data.trains) return [];
+
+    let trains = data.trains as { arrivalTime: string; minutesLeft: number; destination: string; direction: string }[];
+
+    // 하차역이 있으면 목적지 방향 필터 (endStationName이 destination에 포함되는 방향 우선)
+    if (endStationName) {
+      const endClean = endStationName.replace(/역$/, '').trim();
+      const directionTrains = trains.filter(t => t.destination.includes(endClean));
+      // 방향이 맞는 열차가 있으면 그쪽만, 없으면 전체 표시
+      if (directionTrains.length > 0) trains = directionTrains;
+    }
+
+    return trains.slice(0, 4).map(t => ({
+      line: lineName,
+      destination: t.destination,
+      message: '',
+      prevStation: '',
+      minutesLeft: t.minutesLeft,
+      arrivalTime: t.arrivalTime,
+    }));
+  } catch {
+    return [];
+  }
+};
+
 export interface SubwayArrival {
   line: string;
   destination: string;

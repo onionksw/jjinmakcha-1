@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getSubwayArrivals, SubwayArrival } from '../services/realtimeService';
+import { getSubwayArrivals, getSubwayTimetable, SubwayArrival } from '../services/realtimeService';
 import { getBusArrivals, formatArrtime, formatArrMsg, BusArrivalInfo } from '../services/tagoService';
 import { getTagoCityCode } from '../services/tmapService';
 
@@ -7,12 +7,13 @@ interface Props {
   type: 'subway' | 'bus';
   stationName: string;
   lineName?: string;
+  endName?: string;   // 지하철 하차역 — 방향 필터용
   cityCode?: string;
-  lat?: number;  // 좌표가 있으면 서울/경기/인천 등 도시코드를 자동 판별
+  lat?: number;
   lon?: number;
 }
 
-const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCode, lat, lon }) => {
+const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName, cityCode, lat, lon }) => {
   const [subwayData, setSubwayData] = useState<SubwayArrival[]>([]);
   const [busData, setBusData] = useState<BusArrivalInfo[]>([]);
   const [displayStation, setDisplayStation] = useState(stationName);
@@ -25,17 +26,19 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
     setError(null);
     try {
       if (type === 'subway') {
-        const data = await getSubwayArrivals(stationName);
-        // 환승역에서 여러 호선이 섞여 나오므로 lineName으로 필터
-        // "수도권공항철도" ↔ "공항철도", "서울2호선" ↔ "2호선" 등 부분 일치 처리
-        const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
-        const filtered = lineName
-          ? data.filter(item => {
-              const a = norm(lineName), b = norm(item.line);
-              return a.includes(b) || b.includes(a);
-            })
-          : data;
-        setSubwayData(filtered);
+        // 시간표 기반 조회 (barvlDt=0 문제 없음, 항상 정확한 시각 제공)
+        const timetable = lineName ? await getSubwayTimetable(stationName, lineName, endName) : [];
+        if (timetable.length > 0) {
+          setSubwayData(timetable);
+        } else {
+          // 시간표 미지원 노선은 실시간 API 폴백
+          const data = await getSubwayArrivals(stationName);
+          const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
+          const filtered = lineName
+            ? data.filter(item => { const a = norm(lineName), b = norm(item.line); return a.includes(b) || b.includes(a); })
+            : data;
+          setSubwayData(filtered);
+        }
       } else {
         // cityCode가 명시되지 않으면 좌표로 서울/경기/인천 등 자동 판별
         const resolvedCityCode = cityCode ?? (lat && lon ? await getTagoCityCode(lat, lon) : '11');
