@@ -91,11 +91,19 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, cityCod
               <div key={i} className="flex items-center justify-between">
                 <div className="flex items-center gap-1 min-w-0">
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md shrink-0 ${tagBg}`}>{item.line}</span>
-                  <span className="text-xs text-gray-700 font-bold truncate">{item.destination}</span>
+                  <span className="text-xs text-gray-600 truncate">{item.destination}</span>
                 </div>
-                <span className={`text-xs font-black shrink-0 ml-2 ${item.message.includes('분') ? 'text-brandPink' : accent}`}>
-                  {item.message}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                  {item.arrivalTime && (
+                    <span className="text-[10px] text-gray-400 font-mono">{item.arrivalTime}</span>
+                  )}
+                  <span className={`text-xs font-black ${
+                    item.minutesLeft <= 1 ? 'text-brandPink' :
+                    item.minutesLeft <= 5 ? 'text-orange-500' : accent
+                  }`}>
+                    {item.minutesLeft === 0 ? '곧 도착' : `${item.minutesLeft}분`}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

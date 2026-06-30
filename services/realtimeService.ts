@@ -8,8 +8,10 @@ const SUBWAY_LINE_MAP: Record<string, string> = {
 export interface SubwayArrival {
   line: string;
   destination: string;
-  message: string;      // "2분 후", "잠시 후"
+  message: string;      // "2분 후", "잠시 후" — fallback 표시용
   prevStation: string;
+  minutesLeft: number;  // 도착까지 남은 분 (0 = 곧 도착)
+  arrivalTime: string;  // "HH:MM" 형식 도착 예정 시각
 }
 
 export interface BusArrival {
@@ -29,12 +31,24 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
 
     if (!data.realtimeArrivalList) return [];
 
-    return data.realtimeArrivalList.slice(0, 4).map((item: any) => ({
-      line: item.subwayNm || SUBWAY_LINE_MAP[item.subwayId] || item.subwayId,
-      destination: item.trainLineNm || '',
-      message: item.arvlMsg2 || '정보없음',
-      prevStation: item.arvlMsg3 || '',
-    }));
+    const now = Date.now();
+    return data.realtimeArrivalList.slice(0, 4).map((item: any) => {
+      const barvlDt = Number(item.barvlDt || 0);
+      const minutesLeft = barvlDt > 0 ? Math.max(0, Math.round(barvlDt / 60)) : 0;
+      let arrivalTime = '';
+      if (barvlDt > 0) {
+        const d = new Date(now + barvlDt * 1000);
+        arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+      }
+      return {
+        line: item.subwayNm || SUBWAY_LINE_MAP[item.subwayId] || item.subwayId,
+        destination: item.trainLineNm || '',
+        message: item.arvlMsg2 || '정보없음',
+        prevStation: item.arvlMsg3 || '',
+        minutesLeft,
+        arrivalTime,
+      };
+    });
   } catch (e) {
     console.error('지하철 실시간 도착 오류:', e);
     return [];
