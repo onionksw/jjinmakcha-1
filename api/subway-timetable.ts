@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const KEY = process.env.SEOUL_SUBWAY_API_KEY || 'sample';
-const BASE = 'http://swopenAPI.seoul.go.kr/api/subway';
+const BASE = 'https://swopenAPI.seoul.go.kr/api/subway';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -22,11 +22,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       fetch(`${BASE}/${KEY}/json/timeTable/1/200/${subwayId}/${encodeURIComponent(clean)}/U/${weekType}`),
       fetch(`${BASE}/${KEY}/json/timeTable/1/200/${subwayId}/${encodeURIComponent(clean)}/D/${weekType}`),
     ]);
-    const [uData, dData] = await Promise.all([uRes.json(), dRes.json()]);
+
+    // XML 응답이면 JSON 파싱 실패 → 에러로 처리
+    const [uText, dText] = await Promise.all([uRes.text(), dRes.text()]);
+    let uData: any = {}, dData: any = {};
+    try { uData = JSON.parse(uText); } catch { console.warn('[시간표] U방향 JSON파싱실패:', uText.slice(0, 100)); }
+    try { dData = JSON.parse(dText); } catch { console.warn('[시간표] D방향 JSON파싱실패:', dText.slice(0, 100)); }
 
     const toRows = (data: any) => {
-      const rows = data?.SearchSTNTimeTableByIDService?.row ?? data?.row ?? [];
-      return Array.isArray(rows) ? rows : [];
+      const svc = data?.SearchSTNTimeTableByIDService;
+      if (!svc) return [];
+      const rows = svc.row ?? [];
+      // row가 단일 객체(배열 아님)로 올 때도 처리
+      return Array.isArray(rows) ? rows : [rows];
     };
 
     const parseMin = (t: string) => {
@@ -35,9 +43,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     const WINDOW = 90; // 앞으로 90분 이내 열차만
+    const uRows = toRows(uData);
+    const dRows = toRows(dData);
+
+    if (uRows.length === 0 && dRows.length === 0) {
+      console.warn('[시간표] 행 없음 — station:', clean, 'subwayId:', subwayId,
+        '| uData:', JSON.stringify(uData).slice(0, 150));
+    }
+
     const all = [
-      ...toRows(uData).map((r: any) => ({ ...r, _dir: 'U' })),
-      ...toRows(dData).map((r: any) => ({ ...r, _dir: 'D' })),
+      ...uRows.map((r: any) => ({ ...r, _dir: 'U' })),
+      ...dRows.map((r: any) => ({ ...r, _dir: 'D' })),
     ]
       .filter((r: any) => {
         const t = parseMin(r.ARRIVETIME || r.DEPARTURETIME || '00:00');
@@ -60,12 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .sort((a: any, b: any) => a.minutesLeft - b.minutesLeft)
       .slice(0, 8);
 
-    const uRows = toRows(uData);
-    const dRows = toRows(dData);
-    if (uRows.length === 0 && dRows.length === 0) {
-      console.warn('[시간표] 행 없음 — API 응답:', JSON.stringify(uData).slice(0, 200));
-    }
-    return res.json({ trains: all, _debug: { uRows: uRows.length, dRows: dRows.length } });
+    return res.json({ trains: all, _debug: { uRows: uRows.length, dRows: dRows.length, key: KEY.slice(0, 4) + '...' } });
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
   }
