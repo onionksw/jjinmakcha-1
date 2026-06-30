@@ -32,9 +32,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // stId = 정류소 고유 ID (9자리), arsId = 정류소 안내번호 (5자리)
+    // stations[0]만 쓰지 않고 검색된 전체 목록 유지 (이름 검색은 다른 정류소를 첫 결과로 줄 수 있음)
+    const allStIds = new Set(stations.map((s: any) => s.stId));
+    const allArsIds = new Set(stations.map((s: any) => s.arsId));
     const stId = stations[0].stId;
     const arsId = stations[0].arsId;
     const foundStationName = stations[0].stNm || stationName;
+    // 이름 매칭용 — "서교동 정류장" → "서교동"
+    const nameKey = stationName.replace(/정류장$|정류소$/, '').trim();
 
     // 2. routeNo가 있으면 getBusRouteList로 busRouteId 획득 후 getArrInfoByRouteAllList 조회
     let _routeDebug: any = null;
@@ -63,7 +68,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             );
             const allStops = toItems(allData);
             stopCount = allStops.length;
-            const myStops = allStops.filter((item: any) => item.stId === stId || item.arsId === arsId);
+            // stId/arsId 집합 매칭 OR 정류소 이름 매칭 (이름 검색 첫결과가 틀렸을 때 대비)
+            const myStops = allStops.filter((item: any) =>
+              allStIds.has(item.stId) || allArsIds.has(item.arsId) ||
+              (nameKey && item.stNm && item.stNm.replace(/정류장$|정류소$/, '').includes(nameKey))
+            );
             myCount = myStops.length;
             if (myStops.length > 0 && !foundArrivals) {
               foundArrivals = myStops.map((item: any) => ({
@@ -91,21 +100,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 3. fallback: getLowArrInfoByStId (해당 정류소 전체 노선)
-    const arrData = await fetchJson(
-      `${BASE}/arrive/getLowArrInfoByStId?serviceKey=${KEY}&stId=${stId}&resultType=json`
-    );
-    let arrivals = toItems(arrData).map((item: any) => ({
-      routeNo: item.rtNm || '',
-      arrMsg: item.arrmsg1 || '',
-      arrMsg2: item.arrmsg2 || '',
-      remainStop: parseInt(item.traTime1 ?? '0') || 0,
-      arrtime: 0,
-    }));
+    // 3. fallback: getLowArrInfoByStId — 검색된 정류소 전부 시도해서 routeNo 있는 첫 결과 사용
+    let arrivals: any[] = [];
+    for (const st of stations.slice(0, 5)) {
+      const arrData = await fetchJson(
+        `${BASE}/arrive/getLowArrInfoByStId?serviceKey=${KEY}&stId=${st.stId}&resultType=json`
+      ).catch(() => null);
+      if (!arrData) continue;
+      let cands = toItems(arrData).map((item: any) => ({
+        routeNo: item.rtNm || '',
+        arrMsg: item.arrmsg1 || '',
+        arrMsg2: item.arrmsg2 || '',
+        remainStop: parseInt(item.traTime1 ?? '0') || 0,
+        arrtime: 0,
+      }));
+      if (routeNo) cands = cands.filter((a: any) => a.routeNo.includes(routeNo));
+      if (cands.length > 0) { arrivals = cands; break; }
+    }
 
-    if (routeNo) arrivals = arrivals.filter((a: any) => a.routeNo.includes(routeNo));
-
-    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _debug: arrData, _routeDebug, _allStopsDebug });
+    if (req.query.debug) return res.json({ stationName: foundStationName, arsId, stId, arrivals: arrivals.slice(0, 6), _source: 'getLowArrInfoByStId', _routeDebug, _allStopsDebug });
     res.json({ stationName: foundStationName, arsId, arrivals: arrivals.slice(0, 6) });
   } catch (e: any) {
     res.json({ error: e.message, arrivals: [] });
