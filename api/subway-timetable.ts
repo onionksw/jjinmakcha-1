@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const KEY = process.env.SEOUL_SUBWAY_API_KEY || 'sample';
-const BASE = 'http://swopenAPI.seoul.go.kr/api/subway';
+// 서울 지하철 시간표는 swopenAPI가 아닌 openapi.seoul.go.kr:8088 에 있음
+const BASE = 'http://openapi.seoul.go.kr:8088';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -19,8 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     // 상행(U) + 하행(D) 두 방향 모두 조회
     const [uRes, dRes] = await Promise.all([
-      fetch(`${BASE}/${KEY}/json/timeTable/1/200/${subwayId}/${encodeURIComponent(clean)}/U/${weekType}`),
-      fetch(`${BASE}/${KEY}/json/timeTable/1/200/${subwayId}/${encodeURIComponent(clean)}/D/${weekType}`),
+      fetch(`${BASE}/${KEY}/json/SearchSTNTimeTableByIDService/1/200/${subwayId}/${encodeURIComponent(clean)}/U/${weekType}/`),
+      fetch(`${BASE}/${KEY}/json/SearchSTNTimeTableByIDService/1/200/${subwayId}/${encodeURIComponent(clean)}/D/${weekType}/`),
     ]);
 
     // XML 응답이면 JSON 파싱 실패 → 에러로 처리
