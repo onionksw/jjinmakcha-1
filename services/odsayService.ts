@@ -382,6 +382,7 @@ async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]>
       path: segPath,
       departureTime: dep,
       arrivalTime: toHHMM(elapsed),
+      wayCode: sub.wayCode ?? null,   // 1=상행, 2=하행 (ODsay 기준)
     };
   });
 }

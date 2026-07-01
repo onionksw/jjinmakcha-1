@@ -7,13 +7,14 @@ interface Props {
   type: 'subway' | 'bus';
   stationName: string;
   lineName?: string;
-  endName?: string;   // 지하철 하차역 — 방향 필터용
+  endName?: string;
+  wayCode?: number | null;  // ODsay wayCode: 1=상행, 2=하행
   cityCode?: string;
   lat?: number;
   lon?: number;
 }
 
-const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName, cityCode, lat, lon }) => {
+const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName, wayCode, cityCode, lat, lon }) => {
   const [subwayData, setSubwayData] = useState<SubwayArrival[]>([]);
   const [busData, setBusData] = useState<BusArrivalInfo[]>([]);
   const [displayStation, setDisplayStation] = useState(stationName);
@@ -32,7 +33,7 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
           setSubwayData(timetable);
         } else {
           // 시간표 미지원 노선은 실시간 API 폴백
-          const data = await getSubwayArrivals(stationName);
+          const data = await getSubwayArrivals(stationName, wayCode ?? undefined);
           const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
           const filtered = lineName
             ? data.filter(item => { const a = norm(lineName), b = norm(item.line); return a.includes(b) || b.includes(a); })
