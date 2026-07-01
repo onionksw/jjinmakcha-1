@@ -106,45 +106,56 @@ export const getSubwayArrivals = async (stationName: string, nextStationName?: s
         })()
       : rawList;
 
-    // barvlDt > 0인 (아직 안 온) 열차 우선
-    const sorted = [
-      ...dirList.filter((i: any) => Number(i.barvlDt || 0) > 0),
-      ...dirList.filter((i: any) => Number(i.barvlDt || 0) === 0),
-    ].slice(0, 6);
-    return sorted.map((item: any) => {
+    const candidates = dirList.slice(0, 20);
+    const mapped = candidates.map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
       let minutesLeft = 0;
       let arrivalTime = '';
 
+      const arvlMsg = item.arvlMsg2 || '';
       if (barvlDt > 0) {
         minutesLeft = Math.max(0, Math.round(barvlDt / 60));
-        const d = new Date(now + barvlDt * 1000);
+      } else {
+        // barvlDt=0 → arvlMsg2에서 시간 추정
+        const minMatch = arvlMsg.match(/(\d+)분/);
+        const stationMatch = arvlMsg.match(/\[(\d+)\]번째\s*전역/);
+        if (minMatch) {
+          // "2분 후[3번째 전역]" 형태
+          minutesLeft = Number(minMatch[1]);
+        } else if (stationMatch) {
+          // "[5]번째 전역 (용산)" 형태 — barvlDt 미제공(Korail 등), 역 개수 × 2분 추정
+          minutesLeft = Number(stationMatch[1]) * 2;
+        } else if (arvlMsg.includes('전역 도착')) {
+          // "전역 도착" = 바로 전역 출발, 약 1분
+          minutesLeft = 1;
+        } else {
+          // "진입" / "곧 도착" 등 = 지금 도착 중
+          minutesLeft = 0;
+        }
+      }
+      if (minutesLeft > 0) {
+        const d = new Date(now + minutesLeft * 60000);
         arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
       } else {
-        // barvlDt=0일 때 arvlMsg2에서 분 추출 ("2분 후[3번째 전역]" 등)
-        const minMatch = (item.arvlMsg2 || '').match(/(\d+)분/);
-        if (minMatch) {
-          minutesLeft = Number(minMatch[1]);
-          const d = new Date(now + minutesLeft * 60000);
-          arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-        } else {
-          // "곧 도착" / "진입" — 현재 시각 = 이 열차가 지금 도착 중
-          minutesLeft = 0;
-          const d = new Date(now);
-          arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-        }
+        const d = new Date(now);
+        arrivalTime = `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
       }
 
       return {
         line: item.subwayNm || SUBWAY_LINE_MAP[item.subwayId] || item.subwayId,
         destination: item.trainLineNm || '',
         isRealtime: true,
-        message: item.arvlMsg2 || '정보없음',
+        message: arvlMsg || '정보없음',
         prevStation: item.arvlMsg3 || '',
         minutesLeft,
         arrivalTime,
       };
     });
+
+    // minutesLeft 기준 오름차순 정렬 후 상위 3개
+    return mapped
+      .sort((a, b) => a.minutesLeft - b.minutesLeft)
+      .slice(0, 3);
   } catch (e) {
     console.error('지하철 실시간 도착 오류:', e);
     return [];
