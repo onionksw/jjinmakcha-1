@@ -101,15 +101,13 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
           <div className="space-y-1">
             {subwayData.map((item, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className={`text-xs font-mono shrink-0 w-10 ${item.arrivalTime ? 'text-gray-500' : 'text-brandPink font-black'}`}>
-                  {item.arrivalTime || '곧'}
-                </span>
+                <span className="text-xs font-mono text-gray-500 shrink-0 w-10">{item.arrivalTime || '--:--'}</span>
                 <span className="text-xs text-gray-700 font-bold flex-1 truncate">{item.destination}</span>
                 <span className={`text-xs font-black shrink-0 ${
                   item.minutesLeft <= 1 ? 'text-brandPink' :
                   item.minutesLeft <= 5 ? 'text-orange-500' : accent
                 }`}>
-                  {item.minutesLeft === 0 ? '곧 도착' : `${item.minutesLeft}분후`}
+                  {item.minutesLeft === 0 ? '🚨 지금!' : `${item.minutesLeft}분후`}
                 </span>
               </div>
             ))}
