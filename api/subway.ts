@@ -7,7 +7,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const key = process.env.SEOUL_SUBWAY_API_KEY || 'sample';
-  const url = `http://swopenAPI.seoul.go.kr/api/subway/${key}/json/realtimeStationArrival/0/5/${encodeURIComponent(station)}`;
+  const url = `http://swopenAPI.seoul.go.kr/api/subway/${key}/json/realtimeStationArrival/0/20/${encodeURIComponent(station)}`;
 
   try {
     const response = await fetch(url);
