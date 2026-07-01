@@ -698,21 +698,15 @@ const App: React.FC = () => {
   // Calculate time remaining until departure with Fun Comments (도보 시간 반영)
   const calculatePlayTime = (departureTimeStr: string, index?: number, firstWalkMinutes: number = 0) => {
     const now = new Date();
-    let target: Date;
 
-    // 막차(찐막차) 마지노선이 계산돼 있으면 그 시각을 기준으로 사용 (실제 운행 스케줄 기반)
-    if (ldtResult?.latestDepartureMs) {
-        target = new Date(ldtResult.latestDepartureMs);
-    } else {
-        const [targetHours, targetMinutes] = departureTimeStr.split(':').map(Number);
-        target = new Date();
-        target.setHours(targetHours, targetMinutes, 0, 0);
+    const [targetHours, targetMinutes] = departureTimeStr.split(':').map(Number);
+    const target = new Date();
+    target.setHours(targetHours, targetMinutes, 0, 0);
 
-        // Handle crossing midnight
-        if (target.getTime() < now.getTime()) {
-            if (now.getHours() > 20 && targetHours < 12) {
-                 target.setDate(target.getDate() + 1);
-            }
+    // Handle crossing midnight
+    if (target.getTime() < now.getTime()) {
+        if (now.getHours() > 20 && targetHours < 12) {
+             target.setDate(target.getDate() + 1);
         }
     }
 
@@ -2101,7 +2095,7 @@ const App: React.FC = () => {
                                 <Clock className={`w-4 h-4 shrink-0 ${urgent ? 'text-red-500 animate-pulse' : 'text-brandBlue'}`} />
                                 <div className="min-w-0">
                                     <p className="text-[11px] text-gray-500 font-bold">
-                                        막차까지 <span className={`font-black ${urgent ? 'text-red-500' : 'text-gray-800'}`}>{timeText}</span> 남음
+                                        출발까지 <span className={`font-black ${urgent ? 'text-red-500' : 'text-gray-800'}`}>{timeText}</span> 남음
                                     </p>
                                     <p className={`text-sm font-black truncate ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
                                         "{comment}"
@@ -2109,12 +2103,12 @@ const App: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* 막차 카운트다운 */}
+                            {/* 출발 카운트다운 */}
                             <div className="border-t border-gray-100 pt-4">
                                 <p className="text-[10px] text-gray-400 font-bold mb-1">
-                                    막차 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
+                                    이 경로 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
                                 </p>
-                                <Countdown targetTimeStr={ldtResult?.latestDepartureTime || route.departureTime} minutesBefore={firstWalkMinutes} />
+                                <Countdown targetTimeStr={route.departureTime} minutesBefore={firstWalkMinutes} />
                             </div>
                         </div>
                     </div>
