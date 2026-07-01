@@ -89,7 +89,13 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
     if (!data.realtimeArrivalList) return [];
 
     const now = Date.now();
-    return data.realtimeArrivalList.slice(0, 4).map((item: any) => {
+    const rawList: any[] = data.realtimeArrivalList || [];
+    // barvlDt > 0인 (아직 안 온) 열차 우선, 없을 때만 barvlDt=0 포함
+    const sorted = [
+      ...rawList.filter((i: any) => Number(i.barvlDt || 0) > 0),
+      ...rawList.filter((i: any) => Number(i.barvlDt || 0) === 0),
+    ].slice(0, 6);
+    return sorted.map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
       let minutesLeft = 0;
       let arrivalTime = '';
