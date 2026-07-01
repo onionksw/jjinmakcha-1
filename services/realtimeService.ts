@@ -47,13 +47,15 @@ export const getSubwayTimetable = async (
       if (directionTrains.length > 0) trains = directionTrains;
     }
 
-    return trains.slice(0, 4).map(t => ({
+    // 시간표는 1분 이상 남은 열차만 — 이미 출발했거나 막 출발 중인 열차 제외
+    return trains.filter(t => t.minutesLeft >= 1).slice(0, 4).map(t => ({
       line: lineName,
       destination: t.destination,
       message: '',
       prevStation: '',
       minutesLeft: t.minutesLeft,
       arrivalTime: t.arrivalTime,
+      isRealtime: false,
     }));
   } catch {
     return [];
@@ -63,10 +65,11 @@ export const getSubwayTimetable = async (
 export interface SubwayArrival {
   line: string;
   destination: string;
-  message: string;      // "2분 후", "잠시 후" — fallback 표시용
+  message: string;
   prevStation: string;
-  minutesLeft: number;  // 도착까지 남은 분 (0 = 곧 도착)
-  arrivalTime: string;  // "HH:MM" 형식 도착 예정 시각
+  minutesLeft: number;
+  arrivalTime: string;  // "HH:MM"
+  isRealtime?: boolean; // true = 실시간 barvlDt 기반, false = 시간표 기반
 }
 
 export interface BusArrival {
@@ -114,6 +117,7 @@ export const getSubwayArrivals = async (stationName: string): Promise<SubwayArri
       return {
         line: item.subwayNm || SUBWAY_LINE_MAP[item.subwayId] || item.subwayId,
         destination: item.trainLineNm || '',
+        isRealtime: true,
         message: item.arvlMsg2 || '정보없음',
         prevStation: item.arvlMsg3 || '',
         minutesLeft,
