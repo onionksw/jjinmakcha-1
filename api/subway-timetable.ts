@@ -77,7 +77,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .slice(0, 8);
 
     const uResult = uData?.RESULT || uData?.SearchSTNTimeTableByIDService?.RESULT;
-    const dResult = dData?.RESULT || dData?.SearchSTNTimeTableByIDService?.RESULT;
     return res.json({
       trains: all,
       _debug: {
@@ -85,7 +84,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         dRows: dRows.length,
         key: KEY === 'sample' ? 'SAMPLE_KEY_NOT_SET' : KEY.slice(0, 4) + '...',
         uResult,
-        dResult,
+        // 행이 없을 때 실제 응답 원문 노출 (서비스 미신청 등 오류 확인용)
+        uRaw: (uRows.length === 0) ? uText.slice(0, 300) : undefined,
         station: clean,
         subwayId,
       },
