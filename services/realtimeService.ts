@@ -20,32 +20,28 @@ export const lineNameToSubwayId = (lineName: string): string | null => {
 };
 
 // 시간표 기반 지하철 도착 조회
+// wayCode: ODsay 방향코드 (1=상행→U, 2=하행→D). 지정하면 해당 방향만 조회
 export const getSubwayTimetable = async (
   stationName: string,
   lineName: string,
-  endStationName?: string,  // 하차역 — 방향 필터에 사용
+  wayCode?: number | null,
 ): Promise<SubwayArrival[]> => {
   const subwayId = lineNameToSubwayId(lineName);
   if (!subwayId) return [];
 
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
-    const res = await fetch(`/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
+    // wayCode로 방향 고정: 1→U(상행), 2→D(하행), 없으면 둘 다 조회
+    const dir = wayCode === 1 ? 'U' : wayCode === 2 ? 'D' : '';
+    const url = `/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}${dir ? `&dir=${dir}` : ''}`;
+    const res = await fetch(url);
     const data = await res.json();
-    if (!data.trains) {
-      console.warn('[시간표] 응답 없음:', { station: clean, subwayId, data });
+    if (!data.trains || data.trains.length === 0) {
+      console.warn('[시간표] 응답 없음:', { station: clean, subwayId, dir, data });
       return [];
     }
 
-    let trains = data.trains as { arrivalTime: string; minutesLeft: number; destination: string; direction: string }[];
-
-    // 하차역이 있으면 목적지 방향 필터 (endStationName이 destination에 포함되는 방향 우선)
-    if (endStationName) {
-      const endClean = endStationName.replace(/역$/, '').trim();
-      const directionTrains = trains.filter(t => t.destination.includes(endClean));
-      // 방향이 맞는 열차가 있으면 그쪽만, 없으면 전체 표시
-      if (directionTrains.length > 0) trains = directionTrains;
-    }
+    const trains = data.trains as { arrivalTime: string; minutesLeft: number; destination: string; direction: string }[];
 
     return trains.slice(0, 3).map(t => ({
       line: lineName,

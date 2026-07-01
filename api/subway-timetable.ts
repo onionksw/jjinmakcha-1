@@ -7,7 +7,7 @@ const BASE = 'http://openapi.seoul.go.kr:8088';
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  const { station, subwayId } = req.query as Record<string, string>;
+  const { station, subwayId, dir } = req.query as Record<string, string>;
   if (!station || !subwayId) return res.status(400).json({ error: 'station, subwayId 필요' });
 
   const clean = station.replace(/역$/, '').replace(/\(.*\)/, '').trim();
@@ -18,17 +18,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const weekType = day === 0 ? '3' : day === 6 ? '2' : '1';
 
   try {
-    // 상행(U) + 하행(D) 두 방향 모두 조회
-    const [uRes, dRes] = await Promise.all([
-      fetch(`${BASE}/${KEY}/json/SearchSTNTimeTableByIDService/1/200/${subwayId}/${encodeURIComponent(clean)}/U/${weekType}/`),
-      fetch(`${BASE}/${KEY}/json/SearchSTNTimeTableByIDService/1/200/${subwayId}/${encodeURIComponent(clean)}/D/${weekType}/`),
-    ]);
+    // dir 지정 시 해당 방향만, 없으면 U+D 모두 조회
+    const fetchDir = async (d: string) =>
+      fetch(`${BASE}/${KEY}/json/SearchSTNTimeTableByIDService/1/200/${subwayId}/${encodeURIComponent(clean)}/${d}/${weekType}/`);
+
+    const [uRes, dRes] = dir === 'U'
+      ? [await fetchDir('U'), null]
+      : dir === 'D'
+      ? [null, await fetchDir('D')]
+      : await Promise.all([fetchDir('U'), fetchDir('D')]);
 
     // XML 응답이면 JSON 파싱 실패 → 에러로 처리
-    const [uText, dText] = await Promise.all([uRes.text(), dRes.text()]);
+    const uText = uRes ? await uRes.text() : '';
+    const dText = dRes ? await dRes.text() : '';
     let uData: any = {}, dData: any = {};
-    try { uData = JSON.parse(uText); } catch { console.warn('[시간표] U방향 JSON파싱실패:', uText.slice(0, 100)); }
-    try { dData = JSON.parse(dText); } catch { console.warn('[시간표] D방향 JSON파싱실패:', dText.slice(0, 100)); }
+    if (uText) try { uData = JSON.parse(uText); } catch { console.warn('[시간표] U방향 JSON파싱실패:', uText.slice(0, 100)); }
+    if (dText) try { dData = JSON.parse(dText); } catch { console.warn('[시간표] D방향 JSON파싱실패:', dText.slice(0, 100)); }
 
     const toRows = (data: any) => {
       const svc = data?.SearchSTNTimeTableByIDService;

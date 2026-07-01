@@ -29,8 +29,8 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
     setError(null);
     try {
       if (type === 'subway') {
-        // 시간표 기반 조회 (barvlDt=0 문제 없음, 항상 정확한 시각 제공)
-        const timetable = lineName ? await getSubwayTimetable(stationName, lineName, endName) : [];
+        // 시간표 기반 조회: wayCode로 방향 고정 (1→상행U, 2→하행D)
+        const timetable = lineName ? await getSubwayTimetable(stationName, lineName, wayCode) : [];
         if (timetable.length > 0) {
           setSubwayData(timetable);
         } else {
