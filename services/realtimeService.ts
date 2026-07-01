@@ -152,9 +152,16 @@ export const getSubwayArrivals = async (stationName: string, nextStationName?: s
       };
     });
 
-    // minutesLeft 기준 오름차순 정렬 후 상위 3개
+    // minutesLeft 기준 정렬, 같은 열차 중복 제거 후 상위 3개
+    const seen = new Set<string>();
     return mapped
       .sort((a, b) => a.minutesLeft - b.minutesLeft)
+      .filter(item => {
+        const key = `${item.destination}|${item.minutesLeft}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
       .slice(0, 3);
   } catch (e) {
     console.error('지하철 실시간 도착 오류:', e);
