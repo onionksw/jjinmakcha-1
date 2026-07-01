@@ -1944,7 +1944,18 @@ const App: React.FC = () => {
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const firstWalkMinutes = route.segments[0]?.type === 'walk' ? route.segments[0].durationMinutes : 0;
-                const { timeText, comment, urgent } = calculatePlayTime(route.departureTime, index, firstWalkMinutes);
+                // 첫 대중교통 세그먼트 출발 시각 = 도보 후 첫 탑승 시각
+                const firstTransitDepTime = (() => {
+                    const transitSeg = route.segments.find(s => s.type !== 'walk');
+                    if (transitSeg?.departureTime) return transitSeg.departureTime;
+                    const [h, m] = route.departureTime.split(':').map(Number);
+                    const d = new Date();
+                    d.setHours(h, m, 0, 0);
+                    if (d.getTime() < Date.now() - 300000) d.setDate(d.getDate() + 1);
+                    d.setTime(d.getTime() + firstWalkMinutes * 60000);
+                    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                })();
+                const { timeText, comment, urgent } = calculatePlayTime(firstTransitDepTime, index, 0);
                 const arrDate = (() => {
                     const [dh, dm] = route.departureTime.split(':').map(Number);
                     const d = new Date();
@@ -2095,7 +2106,10 @@ const App: React.FC = () => {
                                 <Clock className={`w-4 h-4 shrink-0 ${urgent ? 'text-red-500 animate-pulse' : 'text-brandBlue'}`} />
                                 <div className="min-w-0">
                                     <p className="text-[11px] text-gray-500 font-bold">
-                                        출발까지 <span className={`font-black ${urgent ? 'text-red-500' : 'text-gray-800'}`}>{timeText}</span> 남음
+                                        {urgent
+                                            ? <span className="font-black text-red-500">{timeText}</span>
+                                            : <>첫 탑승까지 <span className="font-black text-gray-800">{timeText}</span> 남음</>
+                                        }
                                     </p>
                                     <p className={`text-sm font-black truncate ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
                                         "{comment}"
@@ -2103,12 +2117,12 @@ const App: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* 출발 카운트다운 */}
+                            {/* 첫 탑승 카운트다운 */}
                             <div className="border-t border-gray-100 pt-4">
                                 <p className="text-[10px] text-gray-400 font-bold mb-1">
-                                    이 경로 출발까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 포함)` : ''}
+                                    첫 탑승까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 소요)` : ''}
                                 </p>
-                                <Countdown targetTimeStr={route.departureTime} minutesBefore={firstWalkMinutes} />
+                                <Countdown targetTimeStr={firstTransitDepTime} minutesBefore={0} />
                             </div>
                         </div>
                     </div>

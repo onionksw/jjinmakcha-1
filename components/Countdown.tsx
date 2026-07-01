@@ -30,9 +30,7 @@ const Countdown: React.FC<CountdownProps> = ({ targetTimeStr, minutesBefore = 0 
 
       if (diff <= 0) {
         setIsUrgent(true);
-        // 목표 시각 자체가 이미 지난 경우 (막차 지남)
-        if (target.getTime() <= now.getTime()) return '막차 지남';
-        // 목표 시각은 미래이지만 도보 시간이 더 걸림 (지금 당장 출발)
+        if (target.getTime() <= now.getTime()) return '이미 출발';
         return '지금 출발!';
       }
 
