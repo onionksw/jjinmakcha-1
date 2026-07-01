@@ -47,8 +47,7 @@ export const getSubwayTimetable = async (
       if (directionTrains.length > 0) trains = directionTrains;
     }
 
-    // 시간표는 1분 이상 남은 열차만 — 이미 출발했거나 막 출발 중인 열차 제외
-    return trains.filter(t => t.minutesLeft >= 1).slice(0, 4).map(t => ({
+    return trains.slice(0, 3).map(t => ({
       line: lineName,
       destination: t.destination,
       message: '',

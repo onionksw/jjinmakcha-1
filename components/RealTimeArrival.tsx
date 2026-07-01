@@ -107,7 +107,9 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
                   item.minutesLeft <= 1 ? 'text-brandPink' :
                   item.minutesLeft <= 5 ? 'text-orange-500' : accent
                 }`}>
-                  {item.isRealtime && item.minutesLeft === 0 ? '🚨 지금!' : `${item.minutesLeft}분후`}
+                  {item.minutesLeft === 0
+                    ? (item.isRealtime ? '🚨 지금!' : '곧')
+                    : `${item.minutesLeft}분후`}
                 </span>
               </div>
             ))}
