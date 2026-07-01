@@ -383,6 +383,7 @@ async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]>
       departureTime: dep,
       arrivalTime: toHHMM(elapsed),
       wayCode: sub.wayCode ?? null,   // 1=상행, 2=하행 (ODsay 기준)
+      wayName: sub.way ?? '',         // 방향 종착역 이름 (예: "인천", "을지로입구")
     };
   });
 }

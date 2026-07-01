@@ -78,8 +78,8 @@ export interface BusArrival {
 }
 
 // 지하철 실시간 도착 (역명)
-// wayCode: 1=상행, 2=하행 (ODsay 기준). null이면 전체 방향 반환
-export const getSubwayArrivals = async (stationName: string, wayCode?: number): Promise<SubwayArrival[]> => {
+// wayName: ODsay sub.way (종착역 이름). 있으면 trainLineNm에 포함된 열차만 반환
+export const getSubwayArrivals = async (stationName: string, wayName?: string): Promise<SubwayArrival[]> => {
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     const url = `/api/subway?station=${encodeURIComponent(clean)}`;
@@ -92,10 +92,22 @@ export const getSubwayArrivals = async (stationName: string, wayCode?: number): 
     const now = Date.now();
     const rawList: any[] = data.realtimeArrivalList || [];
 
+    // wayName(ODsay 종착역)으로 방향 필터 — trainLineNm에 wayName 포함 여부
+    const dirList = wayName
+      ? (() => {
+          const key = wayName.replace(/역$/, '').trim();
+          const matched = rawList.filter((i: any) =>
+            (i.trainLineNm || '').includes(key)
+          );
+          // 매칭된 게 없으면(방향명 불일치 등) 전체 사용
+          return matched.length > 0 ? matched : rawList;
+        })()
+      : rawList;
+
     // barvlDt > 0인 (아직 안 온) 열차 우선
     const sorted = [
-      ...rawList.filter((i: any) => Number(i.barvlDt || 0) > 0),
-      ...rawList.filter((i: any) => Number(i.barvlDt || 0) === 0),
+      ...dirList.filter((i: any) => Number(i.barvlDt || 0) > 0),
+      ...dirList.filter((i: any) => Number(i.barvlDt || 0) === 0),
     ].slice(0, 6);
     return sorted.map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
