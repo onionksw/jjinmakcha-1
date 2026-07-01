@@ -11,6 +11,9 @@ export interface RouteSegment {
   startName?: string;
   endName?: string;
   path?: { lat: number; lng: number }[];
+  wayCode?: number | null;
+  wayName?: string;
+  nextStationName?: string;  // passStopList 기준 진행 방향 다음 역 (방향 필터용)
 }
 
 export interface HybridRoute {

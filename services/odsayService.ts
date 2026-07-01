@@ -363,13 +363,26 @@ async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]>
       alightInstruction = endName   ? `${endName} 정류장 하차` : undefined;
     }
 
+    const stations: any[] = sub.passStopList?.stations || [];
     const segPath: { lat: number; lng: number }[] = [];
-    (sub.passStopList?.stations || []).forEach((s: any) => {
+    stations.forEach((s: any) => {
       if (s.x && s.y) segPath.push({ lat: Number(s.y), lng: Number(s.x) });
     });
     if (segPath.length === 0 && sub.startX && sub.startY) {
       segPath.push({ lat: Number(sub.startY), lng: Number(sub.startX) });
       segPath.push({ lat: Number(sub.endY),   lng: Number(sub.endX) });
+    }
+
+    // 진행 방향 다음 역: passStopList[0]=승차역, [1]=바로 다음 역
+    // 반대 방향 열차는 arvlMsg3에 이 역 이름이 들어있으므로 실시간 필터에 사용
+    if (type === 'subway' && stations.length > 0) {
+      console.log('[ODsay passStopList] stations[0..2]:', JSON.stringify(stations.slice(0, 3)));
+    }
+    const nextStationName = stations.length >= 2
+      ? (stations[1].stationName || stations[1].stationNm || stations[1].name || '').replace(/역$/, '').trim()
+      : '';
+    if (type === 'subway') {
+      console.log('[방향필터] startName:', startName, '→ nextStationName:', nextStationName);
     }
 
     const dep = toHHMM(elapsed);
@@ -382,8 +395,9 @@ async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]>
       path: segPath,
       departureTime: dep,
       arrivalTime: toHHMM(elapsed),
-      wayCode: sub.wayCode ?? null,   // 1=상행, 2=하행 (ODsay 기준)
-      wayName: sub.way ?? '',         // 방향 종착역 이름 (예: "인천", "을지로입구")
+      wayCode: sub.wayCode ?? null,
+      wayName: sub.way ?? '',
+      nextStationName,
     };
   });
 }
