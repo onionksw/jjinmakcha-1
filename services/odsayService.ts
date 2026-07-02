@@ -382,7 +382,7 @@ async function buildSegments(path: any, baseMs: number): Promise<RouteSegment[]>
       ? (stations[1].stationName || stations[1].stationNm || stations[1].name || '').replace(/역$/, '').trim()
       : '';
     if (type === 'subway') {
-      console.log('[방향필터] startName:', startName, '→ nextStationName:', nextStationName);
+      console.log('[방향필터] startName:', startName, '→ nextStationName:', nextStationName, '| wayCode:', sub.wayCode);
     }
 
     const dep = toHHMM(elapsed);

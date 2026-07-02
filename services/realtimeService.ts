@@ -13,6 +13,21 @@ const LINE_NAME_TO_ID: Array<[string, string]> = [
   ['5호선', '1005'], ['4호선', '1004'], ['3호선', '1003'], ['2호선', '1002'], ['1호선', '1001'],
 ];
 
+// ODsay wayCode → Seoul Metro API updnLine 값으로 변환
+// 실측 확인 (2025):
+//   2호선: updnLine = "외선"(wayCode 1) / "내선"(wayCode 2)
+//          — "외선순환"/"내선순환" 아님, ODsay sub.way는 목적지역명이라 사용 불가
+//   나머지: updnLine = "상행"(wayCode 1) / "하행"(wayCode 2)
+export const resolveSubwayDirection = (
+  lineName: string | undefined,
+  wayCode: number | null | undefined,
+): string | undefined => {
+  if (!wayCode) return undefined;
+  const line = (lineName || '').replace(/\s/g, '');
+  if (line.includes('2호선')) return wayCode === 1 ? '외선' : '내선';
+  return wayCode === 1 ? '상행' : '하행';
+};
+
 export const lineNameToSubwayId = (lineName: string): string | null => {
   const norm = lineName.replace(/\s/g, '').replace(/^서울|^수도권/, '');
   const match = LINE_NAME_TO_ID.find(([key]) => norm.includes(key) || key.includes(norm));
@@ -88,10 +103,12 @@ export const getSubwayArrivals = async (stationName: string, direction?: string)
     const now = Date.now();
     const rawList: any[] = data.realtimeArrivalList || [];
 
-    // updnLine("상행"/"하행")으로 방향 필터 — nextStationName 방식보다 급행 포함 더 정확
-    const dirList = direction
-      ? rawList.filter((i: any) => !i.updnLine || i.updnLine === direction)
+    // direction: "상행"/"하행" 또는 2호선은 "외선"/"내선"
+    // 필터 결과 0개이면 전체 폴백 (방향 불명확 시 빈 화면 방지)
+    const filtered = direction
+      ? rawList.filter((i: any) => i.updnLine === direction)
       : rawList;
+    const dirList = filtered.length > 0 ? filtered : rawList;
 
     const candidates = dirList.slice(0, 20);
     const mapped = candidates.map((item: any) => {

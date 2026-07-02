@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Clock } from 'lucide-react';
-import { getSubwayArrivals } from '../services/realtimeService';
+import { getSubwayArrivals, resolveSubwayDirection } from '../services/realtimeService';
 import { RouteSegment } from '../types';
 
 interface Props {
@@ -30,8 +30,7 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
   const fetchRealtime = useCallback(async () => {
     if (firstTransitSeg?.type !== 'subway' || !firstTransitSeg.startName) return;
     const clean = firstTransitSeg.startName.replace(/역$/, '').trim();
-    // wayCode로 상행/하행 방향 필터 (updnLine 기반 — 급행 포함 정확한 방향 필터)
-    const dir = firstTransitSeg.wayCode === 1 ? '상행' : firstTransitSeg.wayCode === 2 ? '하행' : undefined;
+    const dir = resolveSubwayDirection(firstTransitSeg.lineName, firstTransitSeg.wayCode);
     const arrivals = await getSubwayArrivals(clean, dir);
     if (arrivals.length > 0) {
       setNextTransitMs(Date.now() + arrivals[0].minutesLeft * 60000);
