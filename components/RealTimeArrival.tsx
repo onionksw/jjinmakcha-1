@@ -34,8 +34,9 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
         if (timetable.length > 0) {
           setSubwayData(timetable);
         } else {
-          // 시간표 미지원 노선은 실시간 API 폴백
-          const data = await getSubwayArrivals(stationName, nextStationName || undefined);
+          // 시간표 미지원 노선은 실시간 API 폴백 — wayCode로 방향 필터 (1=상행, 2=하행)
+          const dir = wayCode === 1 ? '상행' : wayCode === 2 ? '하행' : undefined;
+          const data = await getSubwayArrivals(stationName, dir);
           const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
           const filtered = lineName
             ? data.filter(item => { const a = norm(lineName), b = norm(item.line); return a.includes(b) || b.includes(a); })

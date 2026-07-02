@@ -73,8 +73,9 @@ export interface BusArrival {
   remainStop: number;
 }
 
-// 지하철 실시간 도착 (역명) — 해당 역의 모든 열차를 시간 순으로 반환
-export const getSubwayArrivals = async (stationName: string, _nextStationName?: string): Promise<SubwayArrival[]> => {
+// 지하철 실시간 도착 (역명)
+// direction: '상행' | '하행' — Seoul Metro API의 updnLine 값으로 방향 필터
+export const getSubwayArrivals = async (stationName: string, direction?: string): Promise<SubwayArrival[]> => {
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     const url = `/api/subway?station=${encodeURIComponent(clean)}`;
@@ -87,7 +88,12 @@ export const getSubwayArrivals = async (stationName: string, _nextStationName?: 
     const now = Date.now();
     const rawList: any[] = data.realtimeArrivalList || [];
 
-    const candidates = rawList.slice(0, 20);
+    // updnLine("상행"/"하행")으로 방향 필터 — nextStationName 방식보다 급행 포함 더 정확
+    const dirList = direction
+      ? rawList.filter((i: any) => !i.updnLine || i.updnLine === direction)
+      : rawList;
+
+    const candidates = dirList.slice(0, 20);
     const mapped = candidates.map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
       let minutesLeft = 0;
