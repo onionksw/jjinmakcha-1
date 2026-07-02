@@ -5,7 +5,7 @@ import { reverseGeocode, setCachedCoordinates } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
 import { AppState, HybridRoute, LDTResult, Place } from './types';
 import CostChart from './components/CostChart';
-import Countdown from './components/Countdown';
+import RouteCardCountdown from './components/RouteCardCountdown';
 import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
 import TmapRouteView from './components/TmapRouteView';
@@ -693,59 +693,6 @@ const App: React.FC = () => {
       } else {
           setNotificationsEnabled(false);
       }
-  };
-
-  // Calculate time remaining until departure with Fun Comments (도보 시간 반영)
-  const calculatePlayTime = (departureTimeStr: string, index?: number, firstWalkMinutes: number = 0) => {
-    const now = new Date();
-
-    const [targetHours, targetMinutes] = departureTimeStr.split(':').map(Number);
-    const target = new Date();
-    target.setHours(targetHours, targetMinutes, 0, 0);
-
-    // Handle crossing midnight
-    if (target.getTime() < now.getTime()) {
-        if (now.getHours() > 20 && targetHours < 12) {
-             target.setDate(target.getDate() + 1);
-        }
-    }
-
-    // 첫 도보 구간만큼 더 일찍 출발해야 하므로 남은 시간에서 차감
-    const diffMs = target.getTime() - now.getTime() - firstWalkMinutes * 60000;
-    if (diffMs <= 0) return { timeText: "지금 출발", comment: "놓치겠다! 뛰어!! 🏃‍♂️", urgent: true };
-
-    const diffMins = Math.floor(diffMs / 60000);
-    const hours = Math.floor(diffMins / 60);
-    const mins = diffMins % 60;
-
-    let timeText = "";
-    if (hours > 0) timeText += `${hours}시간 `;
-    timeText += `${mins}분`;
-
-    let comment = "";
-
-    // Specific logic for routes
-    if (index === 1) {
-        comment = "막병 시키자~ 🍾";
-    } else if (index === 2) {
-        comment = "빠르게 2차 고? 🥂";
-    } else if (index === 3) {
-        comment = "해 뜰 때까지 마시는 거야~ ☀️";
-    } else {
-        if (diffMins < 20) {
-             comment = "편의점도 못 들려! 서둘러! 💦";
-        } else if (diffMins < 40) {
-             comment = "아쉬운데 한 잔만 더? 🍺";
-        } else if (diffMins < 60) {
-             comment = "노래방 막곡 가능! 🎤"; 
-        } else if (diffMins < 90) {
-             comment = "천천히 마셔도 됨 🐢";
-        } else {
-             comment = "해장국 먹고 가도 되겠는데? 🍲";
-        }
-    }
-
-    return { timeText, comment, urgent: diffMins < 20 && index !== 3 };
   };
 
   // --- Views ---
@@ -1944,18 +1891,7 @@ const App: React.FC = () => {
             )}
             {filteredRoutes.map((route: HybridRoute, index: number) => {
                 const firstWalkMinutes = route.segments[0]?.type === 'walk' ? route.segments[0].durationMinutes : 0;
-                // 첫 대중교통 세그먼트 출발 시각 = 도보 후 첫 탑승 시각
-                const firstTransitDepTime = (() => {
-                    const transitSeg = route.segments.find(s => s.type !== 'walk');
-                    if (transitSeg?.departureTime) return transitSeg.departureTime;
-                    const [h, m] = route.departureTime.split(':').map(Number);
-                    const d = new Date();
-                    d.setHours(h, m, 0, 0);
-                    if (d.getTime() < Date.now() - 300000) d.setDate(d.getDate() + 1);
-                    d.setTime(d.getTime() + firstWalkMinutes * 60000);
-                    return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
-                })();
-                const { timeText, comment, urgent } = calculatePlayTime(firstTransitDepTime, index, 0);
+                const firstTransitSeg = route.segments.find(s => s.type !== 'walk');
                 const arrDate = (() => {
                     const [dh, dm] = route.departureTime.split(':').map(Number);
                     const d = new Date();
@@ -2101,29 +2037,12 @@ const App: React.FC = () => {
                                 })}
                             </div>
 
-                            {/* 긴박도 배너 */}
-                            <div className={`rounded-2xl px-4 py-3 flex items-center gap-3 mb-4 ${urgent ? 'bg-red-50' : 'bg-blue-50'}`}>
-                                <Clock className={`w-4 h-4 shrink-0 ${urgent ? 'text-red-500 animate-pulse' : 'text-brandBlue'}`} />
-                                <div className="min-w-0">
-                                    <p className="text-[11px] text-gray-500 font-bold">
-                                        {urgent
-                                            ? <span className="font-black text-red-500">{timeText}</span>
-                                            : <>첫 탑승까지 <span className="font-black text-gray-800">{timeText}</span> 남음</>
-                                        }
-                                    </p>
-                                    <p className={`text-sm font-black truncate ${urgent ? 'text-red-500' : 'text-brandBlue'}`}>
-                                        "{comment}"
-                                    </p>
-                                </div>
-                            </div>
-
-                            {/* 첫 탑승 카운트다운 */}
-                            <div className="border-t border-gray-100 pt-4">
-                                <p className="text-[10px] text-gray-400 font-bold mb-1">
-                                    첫 탑승까지{firstWalkMinutes > 0 ? ` (도보 ${firstWalkMinutes}분 소요)` : ''}
-                                </p>
-                                <Countdown targetTimeStr={firstTransitDepTime} minutesBefore={0} />
-                            </div>
+                            {/* 실시간 기반 출발 카운트다운 */}
+                            <RouteCardCountdown
+                                firstTransitSeg={firstTransitSeg}
+                                walkMinutes={firstWalkMinutes}
+                                routeIndex={index}
+                            />
                         </div>
                     </div>
                 );
