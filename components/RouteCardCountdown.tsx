@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Clock } from 'lucide-react';
-import { getSubwayArrivals, resolveSubwayDirection } from '../services/realtimeService';
+import { getSubwayArrivals, resolveSubwayDirection, lineNameToSubwayId } from '../services/realtimeService';
 import { RouteSegment } from '../types';
 
 interface Props {
@@ -31,7 +31,8 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
     if (firstTransitSeg?.type !== 'subway' || !firstTransitSeg.startName) return;
     const clean = firstTransitSeg.startName.replace(/역$/, '').trim();
     const dir = resolveSubwayDirection(firstTransitSeg.lineName, firstTransitSeg.wayCode);
-    const arrivals = await getSubwayArrivals(clean, dir);
+    const sid = lineNameToSubwayId(firstTransitSeg.lineName || '') || undefined;
+    const arrivals = await getSubwayArrivals(clean, dir, sid);
     if (arrivals.length > 0) {
       setNextTransitMs(Date.now() + arrivals[0].minutesLeft * 60000);
     }

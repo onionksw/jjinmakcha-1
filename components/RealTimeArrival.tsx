@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getSubwayArrivals, getSubwayTimetable, SubwayArrival, resolveSubwayDirection } from '../services/realtimeService';
+import { getSubwayArrivals, getSubwayTimetable, SubwayArrival, resolveSubwayDirection, lineNameToSubwayId } from '../services/realtimeService';
 import { getBusArrivals, formatArrtime, formatArrMsg, BusArrivalInfo } from '../services/tagoService';
 import { getTagoCityCode } from '../services/tmapService';
 
@@ -35,7 +35,8 @@ const RealTimeArrival: React.FC<Props> = ({ type, stationName, lineName, endName
           setSubwayData(timetable);
         } else {
           const dir = resolveSubwayDirection(lineName, wayCode);
-          const data = await getSubwayArrivals(stationName, dir);
+          const sid = lineNameToSubwayId(lineName || '') || undefined;
+          const data = await getSubwayArrivals(stationName, dir, sid);
           const norm = (s: string) => s.replace(/\s/g, '').replace(/^서울|^수도권/, '');
           const filtered = lineName
             ? data.filter(item => { const a = norm(lineName), b = norm(item.line); return a.includes(b) || b.includes(a); })

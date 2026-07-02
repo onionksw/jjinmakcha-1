@@ -2,13 +2,14 @@ const SUBWAY_LINE_MAP: Record<string, string> = {
   '1001': '1호선', '1002': '2호선', '1003': '3호선', '1004': '4호선',
   '1005': '5호선', '1006': '6호선', '1007': '7호선', '1008': '8호선',
   '1009': '9호선', '1063': '경의중앙선', '1065': '공항철도', '1067': '경춘선',
-  '1075': 'GTX-A', '1077': '신분당선', '1092': '우이신설선',
+  '1075': '수인분당선', '1077': '신분당선', '1092': '우이신설선',
+  // 실측: 1075 = 수인분당선 (서울 Metro API 기준), GTX-A는 별도 API 사용
 };
 
 // lineName → subwayId 매핑 (ODsay 노선명 → 서울 API 코드)
 const LINE_NAME_TO_ID: Array<[string, string]> = [
   ['공항철도', '1065'], ['신분당선', '1077'], ['경의중앙선', '1063'],
-  ['경춘선', '1067'], ['우이신설선', '1092'], ['GTX', '1075'],
+  ['경춘선', '1067'], ['우이신설선', '1092'], ['수인분당선', '1075'], ['분당선', '1075'],
   ['9호선', '1009'], ['8호선', '1008'], ['7호선', '1007'], ['6호선', '1006'],
   ['5호선', '1005'], ['4호선', '1004'], ['3호선', '1003'], ['2호선', '1002'], ['1호선', '1001'],
 ];
@@ -89,8 +90,9 @@ export interface BusArrival {
 }
 
 // 지하철 실시간 도착 (역명)
-// direction: '상행' | '하행' — Seoul Metro API의 updnLine 값으로 방향 필터
-export const getSubwayArrivals = async (stationName: string, direction?: string): Promise<SubwayArrival[]> => {
+// direction: 서울 Metro API updnLine 값 — "상행"/"하행" 또는 2호선 "외선"/"내선"
+// subwayId: "1002" 등 — 고속터미널처럼 여러 노선 혼재 시 정확히 구분
+export const getSubwayArrivals = async (stationName: string, direction?: string, subwayId?: string): Promise<SubwayArrival[]> => {
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     const url = `/api/subway?station=${encodeURIComponent(clean)}`;
@@ -103,12 +105,17 @@ export const getSubwayArrivals = async (stationName: string, direction?: string)
     const now = Date.now();
     const rawList: any[] = data.realtimeArrivalList || [];
 
-    // direction: "상행"/"하행" 또는 2호선은 "외선"/"내선"
-    // 필터 결과 0개이면 전체 폴백 (방향 불명확 시 빈 화면 방지)
-    const filtered = direction
+    // 1단계: 방향 필터 (결과 0이면 전체 폴백)
+    const dirFiltered = direction
       ? rawList.filter((i: any) => i.updnLine === direction)
       : rawList;
-    const dirList = filtered.length > 0 ? filtered : rawList;
+    const afterDir = dirFiltered.length > 0 ? dirFiltered : rawList;
+
+    // 2단계: 노선 필터 (고속터미널 등 다노선 혼재 역 대응, 결과 0이면 폴백)
+    const lineFiltered = subwayId
+      ? afterDir.filter((i: any) => i.subwayId === subwayId)
+      : afterDir;
+    const dirList = lineFiltered.length > 0 ? lineFiltered : afterDir;
 
     const candidates = dirList.slice(0, 20);
     const mapped = candidates.map((item: any) => {
@@ -156,7 +163,7 @@ export const getSubwayArrivals = async (stationName: string, direction?: string)
       };
     });
 
-    // minutesLeft 기준 정렬, 같은 열차 중복 제거 후 상위 3개
+    // minutesLeft 기준 정렬, 같은 열차 중복 제거
     const seen = new Set<string>();
     return mapped
       .sort((a, b) => a.minutesLeft - b.minutesLeft)
@@ -166,7 +173,7 @@ export const getSubwayArrivals = async (stationName: string, direction?: string)
         seen.add(key);
         return true;
       })
-      .slice(0, 3);
+      .slice(0, 5);
   } catch (e) {
     console.error('지하철 실시간 도착 오류:', e);
     return [];
