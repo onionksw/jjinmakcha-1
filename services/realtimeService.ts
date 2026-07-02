@@ -73,9 +73,8 @@ export interface BusArrival {
   remainStop: number;
 }
 
-// 지하철 실시간 도착 (역명)
-// nextStationName: 진행 방향 다음 역. arvlMsg3에 이 역명이 포함된 열차 = 반대방향 → 제외
-export const getSubwayArrivals = async (stationName: string, nextStationName?: string): Promise<SubwayArrival[]> => {
+// 지하철 실시간 도착 (역명) — 해당 역의 모든 열차를 시간 순으로 반환
+export const getSubwayArrivals = async (stationName: string, _nextStationName?: string): Promise<SubwayArrival[]> => {
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     const url = `/api/subway?station=${encodeURIComponent(clean)}`;
@@ -88,25 +87,7 @@ export const getSubwayArrivals = async (stationName: string, nextStationName?: s
     const now = Date.now();
     const rawList: any[] = data.realtimeArrivalList || [];
 
-    // nextStationName(진행 방향 다음 역)으로 방향 필터
-    // trainLineNm 형식: "동인천행 - 구로방면" — 방면 부분에 바로 다음 역명이 포함됨
-    // 예: nextStationName="구로" → "구로방면" 열차만 포함 = 하행만 통과
-    const dirList = nextStationName
-      ? (() => {
-          const key = nextStationName.replace(/역$/, '').trim();
-          if (!key) return rawList;
-          console.log('[방향필터] 역:', clean, '/ 다음역 키:', key);
-          console.log('[방향필터] trainLineNm 샘플:', rawList.slice(0, 4).map((i: any) => i.trainLineNm));
-          const matched = rawList.filter((i: any) =>
-            (i.trainLineNm || '').includes(key)
-          );
-          console.log('[방향필터] 전체:', rawList.length, '→ 필터후:', matched.length);
-          // 매칭 없으면 전체 표시 (안전 폴백)
-          return matched.length > 0 ? matched : rawList;
-        })()
-      : rawList;
-
-    const candidates = dirList.slice(0, 20);
+    const candidates = rawList.slice(0, 20);
     const mapped = candidates.map((item: any) => {
       const barvlDt = Number(item.barvlDt || 0);
       let minutesLeft = 0;
