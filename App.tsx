@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2 } from 'lucide-react';
+import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2, Share2 } from 'lucide-react';
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
@@ -272,6 +272,12 @@ const App: React.FC = () => {
   useEffect(() => {
     setSplashMessage(SPLASH_MESSAGES[Math.floor(Math.random() * SPLASH_MESSAGES.length)]);
     track('visit');
+
+    // 카카오톡 공유(Kakao.Share)용 JS SDK 초기화 — 지도용 kakao.maps와는 별개의 SDK/전역객체
+    const Kakao = (window as any).Kakao;
+    if (Kakao && !Kakao.isInitialized()) {
+      Kakao.init(import.meta.env.VITE_KAKAO_JS_KEY);
+    }
 
     // 즐겨찾기용 익명 세션 확보 → 성공하면 즐겨찾기 프리로드 (fire-and-forget, splash를 막지 않음)
     ensureAnonymousSession().then(uid => {
@@ -680,6 +686,28 @@ const App: React.FC = () => {
         'https://docs.google.com/forms/d/e/1FAIpQLSd3IEoCHg0TW-9hc4FV7jzQfmh_UdzbbS8CUPcEDEpy8r2Tug/viewform?usp=header',
         '_blank',
       );
+  };
+
+  const handleShareRoute = () => {
+      if (!selectedRoute) return;
+      const Kakao = (window as any).Kakao;
+      if (!Kakao || !Kakao.isInitialized()) {
+          alert('공유 기능을 불러오지 못했어요. 잠시 후 다시 시도해주세요 🙏');
+          return;
+      }
+      const shareUrl = `${window.location.origin}/?start=${encodeURIComponent(startLoc)}&end=${encodeURIComponent(endLoc)}`;
+      Kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+              title: `${startLoc} → ${endLoc}, 찐막차로 ${selectedRoute.savedAmount.toLocaleString()}원 절약!`,
+              description: `${selectedRoute.totalDuration}분 · ${selectedRoute.totalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`,
+              imageUrl: `${window.location.origin}/icons/icon-512.png`,
+              link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
+          },
+          buttons: [
+              { title: '나도 경로 찾아보기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } },
+          ],
+      });
   };
 
   const handleGoHome = () => {
@@ -2697,6 +2725,14 @@ const App: React.FC = () => {
            >
                 <Car size={24} />
                 <span>택시 호출하기</span>
+           </button>
+
+           <button
+                onClick={handleShareRoute}
+                className="w-full bg-[#FEE500] text-gray-900 font-black text-base py-4 mt-3 rounded-2xl shadow-sm hover:brightness-95 active:scale-95 transition-all flex items-center justify-center gap-2"
+           >
+                <Share2 size={18} />
+                <span>카카오톡으로 공유하기</span>
            </button>
 
            {/* 택시 앱 선택 시트 */}
