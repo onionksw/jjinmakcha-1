@@ -197,7 +197,7 @@ const App: React.FC = () => {
   const [error, setError] = useState('');
   
   // Postcode Modal State
-  const [postcodeTarget, setPostcodeTarget] = useState<'start' | 'end' | 'home' | 'favorite' | null>(null);
+  const [postcodeTarget, setPostcodeTarget] = useState<'start' | 'end' | 'favorite' | null>(null);
   
   // Notice Detail State
   const [selectedNotice, setSelectedNotice] = useState<any | null>(null);
@@ -260,11 +260,9 @@ const App: React.FC = () => {
   const [loginProvider, setLoginProvider] = useState<string>('');
   const [showLoginOverlay, setShowLoginOverlay] = useState(false);
   const [showLoginPrompt, setShowLoginPrompt] = useState(false);
+  const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
 
   // User Settings State
-  const [homeAddress, setHomeAddress] = useState('');
-  const [isEditingHome, setIsEditingHome] = useState(false);
-  const [tempHomeAddress, setTempHomeAddress] = useState('');
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   
   // Advanced My Page State
@@ -703,7 +701,7 @@ const App: React.FC = () => {
       }
   };
 
-  const handleSocialLogin = (provider: 'kakao' | 'naver' | 'google') => {
+  const handleSocialLogin = (provider: 'kakao' | 'naver' | 'google' | 'apple') => {
     const kakaoClientId  = import.meta.env.VITE_KAKAO_CLIENT_ID;
     const naverClientId  = import.meta.env.VITE_NAVER_CLIENT_ID;
     const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -722,9 +720,9 @@ const App: React.FC = () => {
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${redirectUri}&response_type=code&scope=email%20profile`;
       return;
     }
-    // 클라이언트 ID 미설정 시 → 개발 목업 로그인
+    // 클라이언트 ID 미설정 시 → 개발 목업 로그인 (애플은 실제 연동 전까지 항상 목업)
     track('signup');
-    const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글' };
+    const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글', apple: '애플' };
     setLoginProvider(names[provider]);
     setIsLoggedIn(true);
     setShowLoginOverlay(false);
@@ -733,6 +731,19 @@ const App: React.FC = () => {
   const requireLogin = (action: () => void) => {
     if (isLoggedIn) action();
     else setShowLoginPrompt(true);
+  };
+
+  const handleDeleteAccount = async () => {
+    // 실제 저장된 즐겨찾기(Supabase)를 전부 삭제 — 진짜 계정 데이터라 로그아웃만으로는 안 지워짐
+    await Promise.all(favorites.map(f => deleteFavorite(f.id)));
+    setFavorites([]);
+    setIsLoggedIn(false);
+    setLoginProvider('');
+    setNickname('프로 막차러');
+    setProfileImage('');
+    setEmergencyPhone('010-xxxx-xxxx');
+    setShowDeleteAccountConfirm(false);
+    setActiveTab('SEARCH');
   };
 
   const openTaxiApp = (_app: 'kakao' | 'ut') => {
@@ -781,19 +792,23 @@ const App: React.FC = () => {
       });
   };
 
+  const homeFavorite = favorites.find(f => f.kind === 'HOME');
+
   const handleGoHome = () => {
-      if (homeAddress) {
-          setEndLoc(homeAddress);
+      if (homeFavorite) {
+          setEndLoc(homeFavorite.address);
+          if (homeFavorite.lat != null && homeFavorite.lon != null) {
+              setCachedCoordinates(homeFavorite.address, { lat: homeFavorite.lat, lon: homeFavorite.lon });
+          }
           setActiveTab('SEARCH');
       } else {
           setActiveTab('MY_PAGE');
-          alert("먼저 '내 정보'에서 집 주소를 등록해주세요! 🏠");
+          setShowFavoritesSheet(true);
+          setFavoriteForm('new');
+          setFavoriteFormLabel('집');
+          setFavoriteFormAddress('');
+          setFavoriteFormKind('HOME');
       }
-  };
-
-  const saveHomeAddress = () => {
-      setHomeAddress(tempHomeAddress);
-      setIsEditingHome(false);
   };
 
   const saveEmergencyPhone = () => {
@@ -914,7 +929,7 @@ const App: React.FC = () => {
       {/* 우측 상단 프로필 버튼 */}
       <div className="flex justify-end mb-2">
           <button
-              onClick={() => requireLogin(() => setActiveTab('MY_PAGE'))}
+              onClick={() => { if (isLoggedIn) setActiveTab('MY_PAGE'); else setShowLoginOverlay(true); }}
               className="w-10 h-10 rounded-full bg-white border-2 border-gray-100 shadow-sm flex items-center justify-center overflow-hidden hover:scale-105 transition-transform active:scale-95"
           >
               {profileImage
@@ -969,13 +984,15 @@ const App: React.FC = () => {
           </div>
 
           <div className="pt-2">
-             <button
-                onClick={() => requireLogin(handleGoHome)}
-                className={`w-full py-3 rounded-2xl text-sm mb-4 border-2 border-dashed transition-all font-bold flex items-center justify-center gap-2 ${homeAddress ? 'bg-blue-50 border-brandBlue text-brandBlue' : 'bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-500'}`}
-             >
-                <Home size={16} />
-                {homeAddress ? `우리 집으로 슝~` : '우리 집 등록하고 편하게 가기!'}
-             </button>
+             {!homeFavorite && (
+               <button
+                  onClick={() => requireLogin(handleGoHome)}
+                  className="w-full py-3 rounded-2xl text-sm mb-4 border-2 border-dashed transition-all font-bold flex items-center justify-center gap-2 bg-gray-50 hover:bg-gray-100 border-gray-200 text-gray-500"
+               >
+                  <Home size={16} />
+                  우리 집 등록하고 편하게 가기!
+               </button>
+             )}
 
             {favorites.length > 0 && (
               <div className="flex gap-2 overflow-x-auto pb-1 mb-4 -mt-2">
@@ -988,9 +1005,11 @@ const App: React.FC = () => {
                         setCachedCoordinates(fav.address, { lat: fav.lat, lon: fav.lon });
                       }
                     })}
-                    className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full bg-amber-50 text-amber-600 text-xs font-bold border border-amber-100 active:scale-95 transition-all"
+                    className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border active:scale-95 transition-all ${
+                      fav.kind === 'HOME' ? 'bg-blue-50 text-brandBlue border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                    }`}
                   >
-                    <Star size={12} />
+                    {fav.kind === 'HOME' ? <Home size={12} /> : <Star size={12} />}
                     {fav.label}
                   </button>
                 ))}
@@ -1030,7 +1049,6 @@ const App: React.FC = () => {
                         onComplete={(data) => {
                             if (postcodeTarget === 'start') setStartLoc(data.address);
                             if (postcodeTarget === 'end') setEndLoc(data.address);
-                            if (postcodeTarget === 'home') setTempHomeAddress(data.address);
                             if (postcodeTarget === 'favorite') setFavoriteFormAddress(data.address);
                             setPostcodeTarget(null);
                         }}
@@ -1370,7 +1388,14 @@ const App: React.FC = () => {
                             <h3 className="text-2xl font-black text-white truncate">{nickname}</h3>
                             <span className="text-[10px] bg-brandYellow text-gray-800 font-black px-2 py-0.5 rounded-full shrink-0 shadow-sm">LV. 3</span>
                         </div>
-                        <p className="text-blue-100 text-sm font-medium">서울 마스터 🏙️</p>
+                        <div className="flex items-center gap-1.5">
+                            <p className="text-blue-100 text-sm font-medium">서울 마스터 🏙️</p>
+                            {loginProvider && (
+                                <span className="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full shrink-0">
+                                    {loginProvider} 로그인
+                                </span>
+                            )}
+                        </div>
                     </div>
                     <button
                         onClick={() => { setIsEditingProfile(true); setTempNickname(nickname); setTempProfileImage(''); }}
@@ -1408,26 +1433,7 @@ const App: React.FC = () => {
                         <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">나의 설정</p>
                     </div>
 
-                    {/* 우리 집 */}
-                    <button
-                        onClick={() => { setIsEditingHome(true); setTempHomeAddress(homeAddress); }}
-                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
-                    >
-                        <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
-                            <Home size={18} className="text-brandBlue" />
-                        </div>
-                        <div className="flex-1 text-left min-w-0">
-                            <p className="font-bold text-gray-800 text-sm">우리 집 주소</p>
-                            <p className="text-xs text-gray-400 truncate mt-0.5">
-                                {homeAddress || '등록하면 한 번에 집으로! 🏠'}
-                            </p>
-                        </div>
-                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
-                    </button>
-
-                    <div className="mx-5 h-px bg-gray-50" />
-
-                    {/* 즐겨찾기 관리 */}
+                    {/* 즐겨찾기 관리 (우리 집·회사 포함) */}
                     <button
                         onClick={() => setShowFavoritesSheet(true)}
                         className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
@@ -1438,7 +1444,7 @@ const App: React.FC = () => {
                         <div className="flex-1 text-left min-w-0">
                             <p className="font-bold text-gray-800 text-sm">즐겨찾기 관리</p>
                             <p className="text-xs text-gray-400 truncate mt-0.5">
-                                {favorites.length > 0 ? `${favorites.length}개 저장됨` : '자주 가는 곳을 저장해보세요 ⭐'}
+                                {homeFavorite ? homeFavorite.address : favorites.length > 0 ? `${favorites.length}개 저장됨 (집 주소 미등록)` : '집 주소 등록하고 자주 가는 곳도 저장해보세요 ⭐'}
                             </p>
                         </div>
                         <ChevronRight size={16} className="text-gray-300 shrink-0" />
@@ -1575,6 +1581,14 @@ const App: React.FC = () => {
                     {loginProvider ? ` (${loginProvider})` : ''}
                 </button>
 
+                {/* 회원탈퇴 */}
+                <button
+                    onClick={() => setShowDeleteAccountConfirm(true)}
+                    className="w-full py-2 text-gray-300 font-bold text-xs hover:text-gray-400 transition-colors"
+                >
+                    회원탈퇴
+                </button>
+
                 {/* 버전 */}
                 <div className="text-center py-4">
                     <p className="text-xs text-gray-400 font-bold">찐막차 v2.1.0</p>
@@ -1644,6 +1658,17 @@ const App: React.FC = () => {
                     <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                         <div className="px-5 pt-5 pb-3">
                             <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide mb-4">문의 연락처</p>
+                            <a href="http://pf.kakao.com/_EiWxnX" target="_blank" rel="noopener noreferrer" className="flex items-center gap-4 py-3 hover:bg-gray-50 rounded-2xl px-1 transition-colors active:scale-[0.98]">
+                                <div className="w-10 h-10 rounded-2xl bg-[#FEE500] flex items-center justify-center shrink-0 text-base">
+                                    💬
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-[11px] text-gray-400 font-bold">카카오톡 채널</p>
+                                    <p className="text-sm font-black text-gray-800">찐막차 채널 문의하기</p>
+                                </div>
+                                <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                            </a>
+                            <div className="mx-1 h-px bg-gray-50 my-1" />
                             <a href="mailto:ksw@onion.co.kr" className="flex items-center gap-4 py-3 hover:bg-gray-50 rounded-2xl px-1 transition-colors active:scale-[0.98]">
                                 <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
                                     <Mail size={18} className="text-brandBlue" />
@@ -1726,37 +1751,6 @@ const App: React.FC = () => {
                     <div className="flex gap-3">
                         <button onClick={() => setIsEditingProfile(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
                         <button onClick={saveNickname} className="flex-1 py-4 text-white bg-brandBlue rounded-2xl font-black shadow-md shadow-blue-200">저장</button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* 집 주소 편집 모달 */}
-        {isEditingHome && (
-            <div className="absolute inset-0 z-[60] bg-black/60 flex items-end backdrop-blur-sm">
-                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
-                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
-                    <p className="text-lg font-black text-gray-800 mb-1">우리 집 주소</p>
-                    <p className="text-sm text-gray-400 mb-4">등록하면 도착지로 바로 설정할 수 있어요 🏠</p>
-                    <div className="relative mb-4">
-                        <input
-                            type="text"
-                            value={tempHomeAddress}
-                            onChange={(e) => setTempHomeAddress(e.target.value)}
-                            placeholder="예: 서울 강남구 강남대로 123"
-                            className="w-full bg-gray-50 border-2 border-transparent focus:border-brandBlue rounded-2xl px-5 py-4 pr-[7.5rem] focus:outline-none font-bold"
-                        />
-                        <button
-                            onClick={() => setPostcodeTarget('home')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-brandBlue text-white text-xs font-black px-3 py-2 rounded-xl shadow-sm active:scale-95 transition-transform"
-                        >
-                            <Search size={13} />
-                            주소 검색
-                        </button>
-                    </div>
-                    <div className="flex gap-3">
-                        <button onClick={() => setIsEditingHome(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
-                        <button onClick={saveHomeAddress} className="flex-1 py-4 text-white bg-brandBlue rounded-2xl font-black shadow-md shadow-blue-200">저장</button>
                     </div>
                 </div>
             </div>
@@ -1888,7 +1882,7 @@ const App: React.FC = () => {
         )}
 
         {/* 주소 검색 팝업 (MY_PAGE) */}
-        {(postcodeTarget === 'home' || postcodeTarget === 'favorite') && (
+        {postcodeTarget === 'favorite' && (
             <div className="absolute inset-0 z-[70] bg-black/60 flex items-center justify-center p-4 backdrop-blur-md">
                 <div className="bg-white w-full max-w-md rounded-2xl overflow-hidden shadow-2xl relative">
                     <div className="flex justify-between items-center p-4 border-b">
@@ -1900,16 +1894,26 @@ const App: React.FC = () => {
                     <div className="h-[400px] overflow-y-auto">
                         <DaumPostcode
                             onComplete={(data) => {
-                                if (postcodeTarget === 'home') {
-                                    setTempHomeAddress(data.address);
-                                    setIsEditingHome(true);
-                                } else if (postcodeTarget === 'favorite') {
-                                    setFavoriteFormAddress(data.address);
-                                }
+                                setFavoriteFormAddress(data.address);
                                 setPostcodeTarget(null);
                             }}
                             autoClose={false}
                         />
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* 회원탈퇴 확인 */}
+        {showDeleteAccountConfirm && (
+            <div className="absolute inset-0 z-[70] bg-black/60 flex items-end backdrop-blur-sm">
+                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+                    <p className="text-lg font-black text-gray-800 mb-1">정말 탈퇴하시겠어요?</p>
+                    <p className="text-sm text-gray-400 mb-6">즐겨찾기·집 주소 등 저장된 정보가 모두 삭제되고<br/>복구할 수 없어요.</p>
+                    <div className="flex gap-3">
+                        <button onClick={() => setShowDeleteAccountConfirm(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
+                        <button onClick={handleDeleteAccount} className="flex-1 py-4 text-white bg-brandPink rounded-2xl font-black shadow-md shadow-red-200">탈퇴하기</button>
                     </div>
                 </div>
             </div>
@@ -1976,6 +1980,15 @@ const App: React.FC = () => {
               </svg>
             </div>
             <span className="flex-1 text-center text-[15px]">구글로 시작하기</span>
+          </button>
+
+          {/* 애플 */}
+          <button
+            onClick={() => handleSocialLogin('apple')}
+            className="w-full flex items-center gap-3 bg-black rounded-2xl px-5 py-4 font-black text-white active:scale-[0.98] transition-all shadow-md hover:brightness-110"
+          >
+            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-lg"></div>
+            <span className="flex-1 text-center text-[15px]">Apple로 시작하기</span>
           </button>
         </div>
       </div>
