@@ -2764,6 +2764,13 @@ const App: React.FC = () => {
             <ChevronLeft className="w-8 h-8" />
           </button>
           <h2 className="ml-2 text-2xl font-black text-gray-800">상세 경로 🧐</h2>
+          <button
+              onClick={handleShareRoute}
+              className="ml-auto p-2 -mr-2 text-gray-400 hover:text-gray-800 rounded-full hover:bg-gray-100 transition-colors"
+              aria-label="카카오톡으로 공유하기"
+          >
+              <Share2 className="w-6 h-6" />
+          </button>
         </header>
 
         <div className="flex-1 overflow-y-auto pb-6 space-y-6">
@@ -2876,14 +2883,6 @@ const App: React.FC = () => {
            >
                 <Car size={24} />
                 <span>택시 호출하기</span>
-           </button>
-
-           <button
-                onClick={handleShareRoute}
-                className="w-full bg-[#FEE500] text-gray-900 font-black text-base py-4 mt-3 rounded-2xl shadow-sm hover:brightness-95 active:scale-95 transition-all flex items-center justify-center gap-2"
-           >
-                <Share2 size={18} />
-                <span>카카오톡으로 공유하기</span>
            </button>
 
            {/* 택시 앱 선택 시트 */}
