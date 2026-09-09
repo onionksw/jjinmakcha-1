@@ -87,5 +87,18 @@ export enum AppState {
   RESULTS = 'RESULTS',
   DETAILS = 'DETAILS',
   PLACE_DETAIL = 'PLACE_DETAIL',
-  LDT_DETAIL = 'LDT_DETAIL'
+  LDT_DETAIL = 'LDT_DETAIL',
+  SHARED_VIEW = 'SHARED_VIEW'  // 카카오톡 공유 링크로 들어온 사람이 보는 정적 경로 요약 화면
+}
+
+// 카카오톡 공유 시 URL에 통째로 인코딩해서 넣는 경로 요약 (로그인·서버 조회 없이 그대로 렌더링)
+export interface SharedRouteSnapshot {
+  s: string;   // 출발지
+  e: string;   // 도착지
+  dep: string; // 출발 시각 HH:MM
+  arr: string; // 도착 시각 HH:MM
+  dur: number; // 총 소요시간(분)
+  cost: number; // 총 비용
+  saved: number; // 절약 금액
+  segs: { t: RouteSegment['type']; i: string; d: number }[]; // 구간별: 타입/안내문구/소요시간
 }

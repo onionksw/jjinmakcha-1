@@ -5,7 +5,7 @@ import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces,
 import { findLatestDeparture } from './services/latestDepartureService';
 import { ensureAnonymousSession } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
-import { AppState, HybridRoute, LDTResult, Place } from './types';
+import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
 import CostChart from './components/CostChart';
 import RouteCardCountdown from './components/RouteCardCountdown';
 import DaumPostcode from 'react-daum-postcode';
@@ -20,6 +20,22 @@ const track = (event: 'visit' | 'search' | 'signup' | 'taxi') => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event }),
   }).catch(() => {});
+};
+
+// 카카오톡 공유 링크용 인코딩 — 서버/DB 없이 URL에 통째로 담아서 전달 (한글 안전한 base64url,
+// 패딩 '=' 없음 — 카카오톡 등 메신저가 링크 자동인식할 때 '='에서 잘라먹는 경우가 있어서 URL-safe하게 처리)
+const encodeSharedRoute = (snap: SharedRouteSnapshot): string =>
+  btoa(unescape(encodeURIComponent(JSON.stringify(snap))))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+const decodeSharedRoute = (encoded: string): SharedRouteSnapshot | null => {
+  try {
+    let b64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    return JSON.parse(decodeURIComponent(escape(atob(b64))));
+  } catch {
+    return null;
+  }
 };
 
 // Tab Definitions
@@ -235,6 +251,9 @@ const App: React.FC = () => {
   const [tempPhone, setTempPhone] = useState('');
   const [walkPreference, setWalkPreference] = useState<'SHORT' | 'CHEAP'>('CHEAP');
 
+  // 공유 링크로 들어왔을 때 보여줄 정적 경로 요약 (로그인/서버조회 없음)
+  const [sharedSnapshot, setSharedSnapshot] = useState<SharedRouteSnapshot | null>(null);
+
   // 즐겨찾기 State (Supabase)
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [showFavoritesSheet, setShowFavoritesSheet] = useState(false);
@@ -272,6 +291,16 @@ const App: React.FC = () => {
   useEffect(() => {
     setSplashMessage(SPLASH_MESSAGES[Math.floor(Math.random() * SPLASH_MESSAGES.length)]);
     track('visit');
+
+    // 카카오톡 공유 링크(?shared=...)로 들어온 경우 — 정적 경로 요약 화면으로 진입
+    const sharedParam = new URLSearchParams(window.location.search).get('shared');
+    if (sharedParam) {
+      const snap = decodeSharedRoute(sharedParam);
+      if (snap) {
+        setSharedSnapshot(snap);
+        setAppState(AppState.SHARED_VIEW);
+      }
+    }
 
     // 카카오톡 공유(Kakao.Share)용 JS SDK 초기화 — 지도용 kakao.maps와는 별개의 SDK/전역객체
     const Kakao = (window as any).Kakao;
@@ -695,7 +724,22 @@ const App: React.FC = () => {
           alert('공유 기능을 불러오지 못했어요. 잠시 후 다시 시도해주세요 🙏');
           return;
       }
-      const shareUrl = `${window.location.origin}/?start=${encodeURIComponent(startLoc)}&end=${encodeURIComponent(endLoc)}`;
+      const [h, m] = selectedRoute.departureTime.split(':').map(Number);
+      const arrDate = new Date(0, 0, 0, h, m + selectedRoute.totalDuration);
+      const arrivalTime = `${String(arrDate.getHours()).padStart(2, '0')}:${String(arrDate.getMinutes()).padStart(2, '0')}`;
+
+      const snapshot: SharedRouteSnapshot = {
+          s: startLoc,
+          e: endLoc,
+          dep: selectedRoute.departureTime,
+          arr: arrivalTime,
+          dur: selectedRoute.totalDuration,
+          cost: selectedRoute.totalCost,
+          saved: selectedRoute.savedAmount,
+          segs: selectedRoute.segments.map(seg => ({ t: seg.type, i: seg.instruction, d: seg.durationMinutes })),
+      };
+      const shareUrl = `${window.location.origin}/?shared=${encodeSharedRoute(snapshot)}`;
+
       Kakao.Share.sendDefault({
           objectType: 'feed',
           content: {
@@ -705,7 +749,7 @@ const App: React.FC = () => {
               link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
           },
           buttons: [
-              { title: '나도 경로 찾아보기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } },
+              { title: '경로 확인하기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } },
           ],
       });
   };
@@ -2603,6 +2647,74 @@ const App: React.FC = () => {
     </div>
   );
 
+  // 카카오톡 공유 링크로 들어온 사람이 보는 화면 — 로그인/서버조회 없이 URL에 담긴 요약만 그대로 표시
+  const renderSharedView = () => {
+    if (!sharedSnapshot) return renderHome();
+    const snap = sharedSnapshot;
+    const segIcon = (t: string) => t === 'walk' ? <Footprints size={16} /> : t === 'bus' ? <Bus size={16} /> : t === 'subway' ? <Train size={16} /> : <Car size={16} />;
+
+    const goToApp = () => {
+      setSharedSnapshot(null);
+      setAppState(AppState.HOME);
+      window.history.replaceState(null, '', window.location.origin);
+    };
+
+    return (
+      <div className="flex flex-col h-full bg-gray-50">
+        <header className="px-6 py-5 flex items-center bg-white/80 backdrop-blur-md sticky top-0 z-20 shadow-sm">
+          <h2 className="text-2xl font-black text-gray-800">공유된 경로 🚕</h2>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6">
+            <div className="flex items-center gap-2 text-gray-800 font-black text-lg mb-1">
+              <span className="truncate">{snap.s}</span>
+              <ArrowRight size={16} className="text-gray-300 shrink-0" />
+              <span className="truncate">{snap.e}</span>
+            </div>
+            <p className="text-sm text-gray-400 font-bold mb-5">{snap.dep} 출발 · {snap.arr} 도착</p>
+
+            <div className="flex items-center gap-4 text-gray-600 font-bold">
+              <div className="flex items-center gap-1">
+                <Clock size={18} className="text-brandBlue" />
+                <span>{snap.dur}분</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <CreditCard size={18} className="text-brandPink" />
+                <span>{snap.cost.toLocaleString()}원</span>
+              </div>
+              <span className="ml-auto bg-brandMint text-white text-xs font-black px-3 py-1 rounded-full">
+                {snap.saved.toLocaleString()}원 절약
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6">
+            <h3 className="font-black text-gray-800 mb-4">이동 경로</h3>
+            <div className="space-y-3">
+              {snap.segs.map((seg, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
+                    {segIcon(seg.t)}
+                  </div>
+                  <p className="flex-1 text-sm font-bold text-gray-700">{seg.i}</p>
+                  <span className="text-xs text-gray-400 font-bold shrink-0">{seg.d}분</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <button
+            onClick={goToApp}
+            className="w-full bg-brandBlue text-white font-black text-lg py-5 rounded-2xl shadow-lg shadow-blue-200 active:scale-95 transition-all"
+          >
+            나도 찐막차로 경로 찾기
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderDetails = () => {
     if (!selectedRoute) return renderResults();
 
@@ -2929,6 +3041,7 @@ const App: React.FC = () => {
           case AppState.RESULTS: return renderResults();
           case AppState.DETAILS: return renderDetails();
           case AppState.LDT_DETAIL: return renderLdtDetailPage();
+          case AppState.SHARED_VIEW: return renderSharedView();
           default: return renderHome();
       }
   };
