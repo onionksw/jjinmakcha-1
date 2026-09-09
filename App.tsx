@@ -2690,17 +2690,29 @@ const App: React.FC = () => {
           </div>
 
           <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6">
-            <h3 className="font-black text-gray-800 mb-4">이동 경로</h3>
-            <div className="space-y-3">
+            <h3 className="font-black text-gray-800 mb-5">이동 경로</h3>
+            <div className="relative border-l-4 border-gray-200 ml-4 space-y-6 py-2">
               {snap.segs.map((seg, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center text-gray-500 shrink-0">
-                    {segIcon(seg.t)}
+                <div key={i} className="relative pl-8">
+                  <div className={`absolute -left-[11px] top-0 w-5 h-5 rounded-full border-4 border-white shadow-sm flex items-center justify-center
+                    ${seg.t === 'walk' ? 'bg-gray-400' :
+                      seg.t === 'bus' ? 'bg-brandBlue' :
+                      seg.t === 'subway' ? 'bg-brandMint' :
+                      seg.t === 'taxi' ? 'bg-orange-400' : 'bg-brandYellow'}`}
+                  />
+                  <div className={`p-4 rounded-2xl border ${seg.t === 'taxi' ? 'bg-orange-50 border-orange-100' : 'bg-gray-50 border-gray-100'}`}>
+                    <div className="flex items-center gap-2 text-gray-500 mb-1">
+                      {segIcon(seg.t)}
+                      <span className="text-xs font-bold text-gray-400">{seg.d}분</span>
+                    </div>
+                    <p className="text-sm font-bold text-gray-800">{seg.i}</p>
                   </div>
-                  <p className="flex-1 text-sm font-bold text-gray-700">{seg.i}</p>
-                  <span className="text-xs text-gray-400 font-bold shrink-0">{seg.d}분</span>
                 </div>
               ))}
+              <div className="relative pl-8">
+                <div className="absolute -left-[11px] top-0 w-5 h-5 rounded-full bg-gray-800 border-4 border-white shadow-sm" />
+                <p className="font-black text-gray-800">도착! 🏠</p>
+              </div>
             </div>
           </div>
 
