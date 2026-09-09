@@ -156,6 +156,33 @@ const App: React.FC = () => {
   // Beta Notice State (세션당 1회)
   const [showBetaNotice, setShowBetaNotice] = useState(() => !sessionStorage.getItem('betaNoticeDismissed'));
 
+  // 첫 사용자 온보딩 (기기당 1회 — 세션이 아니라 영구 저장)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try { return !localStorage.getItem('onboardingSeen'); } catch { return false; }
+  });
+  const [onboardingStep, setOnboardingStep] = useState(0);
+  const dismissOnboarding = () => {
+    try { localStorage.setItem('onboardingSeen', '1'); } catch {}
+    setShowOnboarding(false);
+  };
+  const ONBOARDING_SLIDES = [
+    {
+      emojis: ['😅'],
+      title: '즐거운 술자리, 늘 찾아오는 막차 걱정',
+      desc: '막차타면 3,000원이면 갈 거리가\n한순간에 30,000원+ 심야할증으로.',
+    },
+    {
+      emojis: ['🚇', '🚕'],
+      title: '그래서 찐막차를 만들었어요',
+      desc: '대중교통으로 최대한 가고,\n애매하게 끊기는 구간만 택시로 이어드려요.',
+    },
+    {
+      emojis: ['🍻'],
+      title: '택시비 아껴서 3차 가자!',
+      desc: '매번 그날 가장 저렴하고 빠른\n귀가 경로를 찾아드릴게요.',
+    },
+  ];
+
   // Navigation State
   const [activeTab, setActiveTab] = useState<Tab>('SEARCH');
   
@@ -3080,6 +3107,51 @@ const App: React.FC = () => {
                className="w-full bg-brandBlue text-white font-black text-base py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform"
              >
                확인했어요 👍
+             </button>
+           </div>
+         </div>
+       )}
+
+       {/* 첫 사용자 온보딩 */}
+       {showOnboarding && !showSplash && (
+         <div className="absolute inset-0 z-[96] bg-black/50 backdrop-blur-sm flex items-end justify-center animate-in fade-in duration-200">
+           <div className="relative bg-white w-full rounded-t-[2rem] p-7 shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
+             <button
+               onClick={dismissOnboarding}
+               className="absolute top-5 right-5 text-gray-300 hover:text-gray-500 text-xs font-bold"
+             >
+               건너뛰기
+             </button>
+
+             <div className="flex justify-center items-center gap-3 mb-5 mt-2">
+               {ONBOARDING_SLIDES[onboardingStep].emojis.map((e, i) => (
+                 <React.Fragment key={i}>
+                   {i > 0 && <span className="text-xl font-black text-gray-300">+</span>}
+                   <div className="w-16 h-16 rounded-3xl bg-blue-50 flex items-center justify-center text-3xl shadow-sm">
+                     {e}
+                   </div>
+                 </React.Fragment>
+               ))}
+             </div>
+             <p className="text-center text-xl font-black text-gray-800 mb-2">{ONBOARDING_SLIDES[onboardingStep].title}</p>
+             <p className="text-center text-sm text-gray-500 font-medium leading-relaxed mb-6 whitespace-pre-line">
+               {ONBOARDING_SLIDES[onboardingStep].desc}
+             </p>
+
+             <div className="flex items-center justify-center gap-1.5 mb-6">
+               {ONBOARDING_SLIDES.map((_, i) => (
+                 <div key={i} className={`h-1.5 rounded-full transition-all ${i === onboardingStep ? 'w-6 bg-brandBlue' : 'w-1.5 bg-gray-200'}`} />
+               ))}
+             </div>
+
+             <button
+               onClick={() => {
+                 if (onboardingStep < ONBOARDING_SLIDES.length - 1) setOnboardingStep(s => s + 1);
+                 else dismissOnboarding();
+               }}
+               className="w-full bg-brandBlue text-white font-black text-base py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform"
+             >
+               {onboardingStep < ONBOARDING_SLIDES.length - 1 ? '다음' : '시작하기 🚀'}
              </button>
            </div>
          </div>
