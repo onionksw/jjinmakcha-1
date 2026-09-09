@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2, Share2 } from 'lucide-react';
+import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2, Share2, ChevronDown } from 'lucide-react';
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
 import { ensureAnonymousSession } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
+import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
 import CostChart from './components/CostChart';
 import RouteCardCountdown from './components/RouteCardCountdown';
@@ -288,6 +289,16 @@ const App: React.FC = () => {
   const [favoriteFormAddress, setFavoriteFormAddress] = useState('');
   const [favoriteFormKind, setFavoriteFormKind] = useState<FavoriteKind>('CUSTOM');
 
+  // 절약금액 기록 / 귀가 중 모드 State
+  const [monthlySavings, setMonthlySavings] = useState(0);
+  const [totalSavings, setTotalSavings] = useState(0);
+  const [isCommuting, setIsCommuting] = useState(false);
+  // "귀가하기" 누른 시점의 경로를 따로 붙잡아둠 — 이후 다른 경로를 검색/조회해도
+  // 상단 고정 카운트다운은 실제로 귀가 중인 경로 기준을 유지해야 하므로 selectedRoute와 분리
+  const [commutingRoute, setCommutingRoute] = useState<HybridRoute | null>(null);
+  const [commutingCollapsed, setCommutingCollapsed] = useState(false);
+  const [savingsToast, setSavingsToast] = useState<{ amount: number; duplicate: boolean } | null>(null);
+
   // 피커 모달 열릴 때 현재 선택값으로 스크롤
   useEffect(() => {
     if (!filterModalType || !pickerScrollRef.current) return;
@@ -333,9 +344,13 @@ const App: React.FC = () => {
       Kakao.init(import.meta.env.VITE_KAKAO_JS_KEY);
     }
 
-    // 즐겨찾기용 익명 세션 확보 → 성공하면 즐겨찾기 프리로드 (fire-and-forget, splash를 막지 않음)
+    // 즐겨찾기용 익명 세션 확보 → 성공하면 즐겨찾기·절약금액 프리로드 (fire-and-forget, splash를 막지 않음)
     ensureAnonymousSession().then(uid => {
-      if (uid) listFavorites().then(setFavorites).catch(() => {});
+      if (uid) {
+        listFavorites().then(setFavorites).catch(() => {});
+        getMonthlySavings().then(setMonthlySavings).catch(() => {});
+        getTotalSavings().then(setTotalSavings).catch(() => {});
+      }
     });
 
     const timer = setTimeout(() => {
@@ -753,6 +768,34 @@ const App: React.FC = () => {
         'https://docs.google.com/forms/d/e/1FAIpQLSd3IEoCHg0TW-9hc4FV7jzQfmh_UdzbbS8CUPcEDEpy8r2Tug/viewform?usp=header',
         '_blank',
       );
+  };
+
+  const handleStartCommute = async () => {
+      if (!selectedRoute) return;
+      const { logged } = await logSavings(startLoc, endLoc, selectedRoute.savedAmount);
+      if (logged) {
+          const updatedMonthly = await getMonthlySavings();
+          setMonthlySavings(updatedMonthly);
+          setTotalSavings(prev => prev + selectedRoute.savedAmount);
+      }
+      setSavingsToast({ amount: selectedRoute.savedAmount, duplicate: !logged });
+      setTimeout(() => setSavingsToast(null), 3000);
+      setCommutingRoute(selectedRoute);
+      setCommutingCollapsed(false);
+      setIsCommuting(true);
+  };
+
+  const handleEndCommute = () => {
+      setIsCommuting(false);
+      setCommutingRoute(null);
+      setCommutingCollapsed(false);
+  };
+
+  const handleReturnToCommute = () => {
+      if (!commutingRoute) return;
+      setSelectedRoute(commutingRoute);
+      setActiveTab('SEARCH');
+      setAppState(AppState.DETAILS);
   };
 
   const handleShareRoute = () => {
@@ -1361,7 +1404,14 @@ const App: React.FC = () => {
       </div>
   );
 
-  const renderMyPage = () => (
+  const renderMyPage = () => {
+    const levelInfo = getLevel(totalSavings);
+    const levelProgressPct = levelInfo.nextThreshold
+        ? Math.min(100, Math.round(((totalSavings - levelInfo.currentThreshold) / (levelInfo.nextThreshold - levelInfo.currentThreshold)) * 100))
+        : 100;
+    const amountToNextLevel = levelInfo.nextThreshold ? levelInfo.nextThreshold - totalSavings : 0;
+
+    return (
     <div className="flex flex-col h-full bg-gray-50 pb-6 relative">
         {/* Header */}
         <header className="px-5 py-4 bg-white sticky top-0 z-20 shadow-sm flex items-center gap-2">
@@ -1386,10 +1436,10 @@ const App: React.FC = () => {
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-0.5">
                             <h3 className="text-2xl font-black text-white truncate">{nickname}</h3>
-                            <span className="text-[10px] bg-brandYellow text-gray-800 font-black px-2 py-0.5 rounded-full shrink-0 shadow-sm">LV. 3</span>
+                            <span className="text-[10px] bg-brandYellow text-gray-800 font-black px-2 py-0.5 rounded-full shrink-0 shadow-sm">LV. {levelInfo.level}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                            <p className="text-blue-100 text-sm font-medium">서울 마스터 🏙️</p>
+                            <p className="text-blue-100 text-sm font-medium">{levelInfo.label}</p>
                             {loginProvider && (
                                 <span className="text-[10px] bg-white/20 text-white font-bold px-2 py-0.5 rounded-full shrink-0">
                                     {loginProvider} 로그인
@@ -1410,18 +1460,20 @@ const App: React.FC = () => {
                     <div className="flex justify-between items-end mb-2">
                         <div>
                             <p className="text-blue-100 text-[10px] font-bold mb-0.5">이번 달 절약 금액</p>
-                            <p className="text-2xl font-black text-white">42,000원</p>
+                            <p className="text-2xl font-black text-white">{monthlySavings.toLocaleString()}원</p>
                         </div>
                         <div className="text-right">
-                            <p className="text-blue-100 text-[10px] font-bold mb-0.5">목표까지 남은 금액</p>
-                            <p className="text-brandYellow font-black text-sm">8,000원</p>
+                            <p className="text-blue-100 text-[10px] font-bold mb-0.5">다음 레벨까지</p>
+                            <p className="text-brandYellow font-black text-sm">
+                                {levelInfo.nextThreshold ? `${amountToNextLevel.toLocaleString()}원` : '최고 레벨!'}
+                            </p>
                         </div>
                     </div>
                     <div className="w-full bg-white/20 h-2 rounded-full overflow-hidden mb-1.5">
-                        <div className="bg-brandYellow h-full rounded-full w-[84%] shadow-[0_0_8px_rgba(255,217,61,0.5)] transition-all" />
+                        <div className="bg-brandYellow h-full rounded-full shadow-[0_0_8px_rgba(255,217,61,0.5)] transition-all" style={{ width: `${levelProgressPct}%` }} />
                     </div>
                     <p className="text-blue-100 text-[10px] font-bold flex items-center gap-1">
-                        <TrendingUp size={10} /> 목표: 치킨 먹기 🍗
+                        <TrendingUp size={10} /> 목표: {levelInfo.goalFlavor}
                     </p>
                 </div>
             </div>
@@ -1919,7 +1971,8 @@ const App: React.FC = () => {
             </div>
         )}
     </div>
-  );
+    );
+  };
 
   const renderLogin = () => (
     <div className="flex flex-col h-full px-6 pt-10 pb-8 bg-gradient-to-b from-blue-50 to-white overflow-y-auto">
@@ -2934,6 +2987,18 @@ const App: React.FC = () => {
                </div>
            )}
         </div>
+
+        {!isCommuting && (
+            <div className="px-6 py-4 bg-white/90 backdrop-blur-md border-t border-gray-100 shadow-[0_-4px_16px_rgba(0,0,0,0.04)]">
+                <button
+                     onClick={() => requireLogin(handleStartCommute)}
+                     className="w-full bg-brandMint text-white font-black text-xl py-5 rounded-2xl shadow-lg shadow-mint-200 hover:brightness-105 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                     <Navigation size={22} />
+                     <span>이 경로로 귀가하기</span>
+                </button>
+            </div>
+        )}
       </div>
     );
   };
@@ -3179,6 +3244,49 @@ const App: React.FC = () => {
            </div>
        )}
 
+       {/* 귀가 중 — 어느 화면에 있어도 계속 떠있는 카운트다운 (접기 가능) */}
+       {isCommuting && commutingRoute && (
+           commutingCollapsed ? (
+               <button
+                   onClick={() => setCommutingCollapsed(false)}
+                   className="absolute bottom-24 right-4 z-[82] w-14 h-14 rounded-full bg-brandMint text-white shadow-2xl flex items-center justify-center text-2xl animate-pulse"
+                   aria-label="귀가 중 카운트다운 펼치기"
+               >
+                   🏃
+               </button>
+           ) : (
+               <div className="absolute top-0 left-0 right-0 z-[82] p-3 animate-in slide-in-from-top-4 duration-300">
+                   <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-3" onClick={handleReturnToCommute}>
+                       <div className="flex items-center justify-between mb-2 px-1">
+                           <span className="inline-flex items-center gap-1.5 bg-brandMint/10 text-brandMint text-[11px] font-black px-2.5 py-1 rounded-full">
+                               🏃 귀가 중 · {commutingRoute.name}
+                           </span>
+                           <div className="flex items-center gap-3 shrink-0">
+                               <button
+                                   onClick={(e) => { e.stopPropagation(); handleEndCommute(); }}
+                                   className="text-[11px] font-bold text-gray-400 hover:text-gray-600"
+                               >
+                                   도착했어요 🏠
+                               </button>
+                               <button
+                                   onClick={(e) => { e.stopPropagation(); setCommutingCollapsed(true); }}
+                                   className="text-gray-300 hover:text-gray-500"
+                                   aria-label="접기"
+                               >
+                                   <ChevronDown size={16} />
+                               </button>
+                           </div>
+                       </div>
+                       <RouteCardCountdown
+                           firstTransitSeg={commutingRoute.segments.find(s => s.type !== 'walk')}
+                           walkMinutes={commutingRoute.walkMinutes}
+                           routeIndex={0}
+                       />
+                   </div>
+               </div>
+           )
+       )}
+
        {/* 로그인 유도 팝업 */}
        {showLoginPrompt && (
            <div className="absolute inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-end justify-center animate-in fade-in duration-200"
@@ -3236,6 +3344,27 @@ const App: React.FC = () => {
              <button onClick={dismissInstallBanner} className="shrink-0 text-gray-300 hover:text-gray-500 p-1">
                <X size={18} />
              </button>
+           </div>
+         </div>
+       )}
+
+       {/* 절약금액 기록 토스트 */}
+       {savingsToast && (
+         <div className="absolute bottom-24 left-0 right-0 z-[85] p-4 animate-in slide-in-from-bottom-4 duration-300 pointer-events-none">
+           <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 flex items-center gap-3">
+             <div className="w-11 h-11 rounded-2xl bg-brandMint/10 flex items-center justify-center shrink-0 text-xl">
+               {savingsToast.duplicate ? '🚶' : '🎉'}
+             </div>
+             <div className="flex-1 min-w-0">
+               {savingsToast.duplicate ? (
+                 <p className="font-black text-gray-800 text-sm">이미 기록된 여정이에요</p>
+               ) : (
+                 <>
+                   <p className="font-black text-gray-800 text-sm">{savingsToast.amount.toLocaleString()}원 절약 확정!</p>
+                   <p className="text-xs text-gray-400 leading-tight mt-0.5">이번 달 총 {monthlySavings.toLocaleString()}원 절약했어요</p>
+                 </>
+               )}
+             </div>
            </div>
          </div>
        )}
