@@ -3,7 +3,7 @@ import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, 
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession, signInWithKakao, signOutSupabase, supabase } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signOutSupabase, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
@@ -373,7 +373,7 @@ const App: React.FC = () => {
       if (user && !user.is_anonymous) {
         setIsLoggedIn(true);
         const identity = user.app_metadata?.provider as string | undefined;
-        const providerNames: Record<string, string> = { kakao: '카카오', google: '구글', naver: '네이버', apple: '애플' };
+        const providerNames: Record<string, string> = { kakao: '카카오', google: '구글', naver: '네이버', apple: '애플', 'custom:naver': '네이버' };
         setLoginProvider(identity ? (providerNames[identity] ?? identity) : '');
         const meta = user.user_metadata || {};
         const displayName = meta.name || meta.full_name || meta.nickname || meta.preferred_username || meta.user_name;
@@ -738,10 +738,6 @@ const App: React.FC = () => {
   };
 
   const handleSocialLogin = async (provider: 'kakao' | 'naver' | 'google' | 'apple') => {
-    const naverClientId  = import.meta.env.VITE_NAVER_CLIENT_ID;
-    const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    const redirectUri    = encodeURIComponent(window.location.origin);
-
     if (provider === 'kakao') {
       // 실제 Supabase 카카오 로그인 — 성공하면 카카오 로그인 페이지로 리다이렉트되고,
       // 돌아온 뒤 상태 동기화는 onAuthStateChange 리스너가 처리함
@@ -749,16 +745,19 @@ const App: React.FC = () => {
       if (error) alert(`카카오 로그인 연결에 실패했어요: ${error}`);
       return;
     }
-    if (provider === 'naver' && naverClientId) {
-      const state = Math.random().toString(36).slice(2);
-      window.location.href = `https://nid.naver.com/oauth2.0/authorize?client_id=${naverClientId}&redirect_uri=${redirectUri}&response_type=code&state=${state}`;
+    if (provider === 'naver') {
+      // 실제 Supabase 네이버 로그인 (커스텀 OIDC 프로바이더) — 카카오와 동일한 방식
+      const { error } = await signInWithNaver();
+      if (error) alert(`네이버 로그인 연결에 실패했어요: ${error}`);
       return;
     }
-    if (provider === 'google' && googleClientId) {
-      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${googleClientId}&redirect_uri=${redirectUri}&response_type=code&scope=email%20profile`;
+    if (provider === 'google') {
+      // 실제 Supabase 구글 로그인 — 공식 지원 프로바이더라 카카오와 동일한 방식으로 연동
+      const { error } = await signInWithGoogle();
+      if (error) alert(`구글 로그인 연결에 실패했어요: ${error}`);
       return;
     }
-    // 클라이언트 ID 미설정 시 → 개발 목업 로그인 (애플은 실제 연동 전까지 항상 목업)
+    // 애플은 실제 연동 전까지 항상 목업
     track('signup');
     const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글', apple: '애플' };
     setLoginProvider(names[provider]);

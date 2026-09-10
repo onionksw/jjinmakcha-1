@@ -34,22 +34,27 @@ export function ensureAnonymousSession(): Promise<string | null> {
   return anonAuthPromise;
 }
 
-// 이미 있는 익명 세션(즐겨찾기 등 데이터)을 그대로 이어받아 카카오 계정으로 승격.
+// 이미 있는 익명 세션(즐겨찾기 등 데이터)을 그대로 이어받아 실계정으로 승격.
 // 세션이 없거나 이미 실계정이면 일반 로그인으로 폴백.
-export async function signInWithKakao(): Promise<{ error: string | null }> {
+// provider: 기본 제공 프로바이더는 'kakao' 등 그대로, 커스텀 OIDC는 'custom:naver' 형식.
+async function signInWithSocialProvider(provider: string): Promise<{ error: string | null }> {
   if (!supabase) return { error: 'Supabase 설정이 없습니다.' };
 
   const { data: { user } } = await supabase.auth.getUser();
 
   if (user?.is_anonymous) {
-    const { error } = await supabase.auth.linkIdentity({ provider: 'kakao' });
+    const { error } = await supabase.auth.linkIdentity({ provider: provider as any });
     if (error) return { error: error.message };
     return { error: null };
   }
 
-  const { error } = await supabase.auth.signInWithOAuth({ provider: 'kakao' });
+  const { error } = await supabase.auth.signInWithOAuth({ provider: provider as any });
   return { error: error ? error.message : null };
 }
+
+export const signInWithKakao = (): Promise<{ error: string | null }> => signInWithSocialProvider('kakao');
+export const signInWithNaver = (): Promise<{ error: string | null }> => signInWithSocialProvider('custom:naver');
+export const signInWithGoogle = (): Promise<{ error: string | null }> => signInWithSocialProvider('google');
 
 export async function signOutSupabase(): Promise<void> {
   if (!supabase) return;
