@@ -3,7 +3,7 @@ import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, 
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signOutSupabase, supabase } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
@@ -757,7 +757,12 @@ const App: React.FC = () => {
       if (error) alert(`구글 로그인 연결에 실패했어요: ${error}`);
       return;
     }
-    // 애플은 실제 연동 전까지 항상 목업
+    if (provider === 'apple') {
+      // 실제 Supabase 애플 로그인 — 카카오/구글과 동일한 방식으로 연동
+      const { error } = await signInWithApple();
+      if (error) alert(`애플 로그인 연결에 실패했어요: ${error}`);
+      return;
+    }
     track('signup');
     const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글', apple: '애플' };
     setLoginProvider(names[provider]);

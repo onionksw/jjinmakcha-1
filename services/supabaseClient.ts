@@ -55,6 +55,7 @@ async function signInWithSocialProvider(provider: string): Promise<{ error: stri
 export const signInWithKakao = (): Promise<{ error: string | null }> => signInWithSocialProvider('kakao');
 export const signInWithNaver = (): Promise<{ error: string | null }> => signInWithSocialProvider('custom:naver');
 export const signInWithGoogle = (): Promise<{ error: string | null }> => signInWithSocialProvider('google');
+export const signInWithApple = (): Promise<{ error: string | null }> => signInWithSocialProvider('apple');
 
 export async function signOutSupabase(): Promise<void> {
   if (!supabase) return;
