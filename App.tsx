@@ -3,7 +3,7 @@ import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, 
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, supabase } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
@@ -368,7 +368,10 @@ const App: React.FC = () => {
   // 여기서 실계정 정보를 반영함. 익명 세션만 있을 때는 손대지 않음(베타 임시 로그인 기본값 유지).
   useEffect(() => {
     if (!supabase) return;
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // 소셜 로그인이 "이미 다른 계정에 연결된 프로바이더"로 실패했다면(재로그인 케이스)
+    // 그 기존 계정으로 로그인 재시도 — 실패해도 세션이 조용히 익명으로 남는 문제를 해결
+    resolvePendingSocialLink();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const user = session?.user;
       if (user && !user.is_anonymous) {
         setIsLoggedIn(true);
@@ -379,7 +382,14 @@ const App: React.FC = () => {
         const displayName = meta.name || meta.full_name || meta.nickname || meta.preferred_username || meta.user_name;
         if (displayName) setNickname(displayName);
         const avatar = meta.avatar_url || meta.picture;
-        if (avatar) setProfileImage(avatar);
+        if (avatar) {
+          setProfileImage(avatar);
+        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          // 로그인 시점에 프로바이더가 사진을 안 주면(애플 등) 기본 프로필 아이콘이 뜨도록 초기화.
+          // TOKEN_REFRESHED 등 세션 유지 이벤트에서는 건드리지 않아 마이페이지에서 직접 수정한
+          // 프로필 사진이 세션 중간에 되돌아가지 않게 함.
+          setProfileImage('');
+        }
       }
     });
     return () => subscription.unsubscribe();
@@ -1655,23 +1665,35 @@ const App: React.FC = () => {
                     <div className="pb-2" />
                 </div>
 
-                {/* 로그아웃 */}
-                <button
-                    onClick={async () => {
-                        await signOutSupabase();
-                        setIsLoggedIn(false);
-                        setLoginProvider('');
-                        setFavorites([]);
-                        setMonthlySavings(0);
-                        setTotalSavings(0);
-                        // 로그아웃 후 새 익명 세션으로 재개 — 다음 로그인 전까지 임시로 즐겨찾기 등 이용 가능
-                        ensureAnonymousSession().catch(() => {});
-                    }}
-                    className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-500 font-black text-sm hover:bg-gray-200 transition-colors active:scale-[0.98]"
-                >
-                    로그아웃
-                    {loginProvider ? ` (${loginProvider})` : ''}
-                </button>
+                {/* 로그인 상태에 따라 로그아웃/로그인 버튼 전환 — loginProvider는 실제 소셜 로그인 성공 시에만 채워짐 */}
+                {loginProvider ? (
+                    <button
+                        onClick={async () => {
+                            await signOutSupabase();
+                            setIsLoggedIn(false);
+                            setLoginProvider('');
+                            setFavorites([]);
+                            setMonthlySavings(0);
+                            setTotalSavings(0);
+                            setNickname('프로 막차러');
+                            setProfileImage('');
+                            // 로그아웃 후 새 익명 세션으로 재개 — 다음 로그인 전까지 임시로 즐겨찾기 등 이용 가능
+                            ensureAnonymousSession().catch(() => {});
+                            // 내 정보는 AppState가 아니라 activeTab으로 제어되는 탭이라 이걸로 이동해야 함
+                            setActiveTab('SEARCH');
+                        }}
+                        className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-500 font-black text-sm hover:bg-gray-200 transition-colors active:scale-[0.98]"
+                    >
+                        로그아웃 ({loginProvider})
+                    </button>
+                ) : (
+                    <button
+                        onClick={() => setShowLoginOverlay(true)}
+                        className="w-full py-3.5 rounded-2xl bg-brandBlue text-white font-black text-sm hover:brightness-110 transition-colors active:scale-[0.98]"
+                    >
+                        로그인
+                    </button>
+                )}
 
                 {/* 회원탈퇴 */}
                 <button
@@ -2050,14 +2072,14 @@ const App: React.FC = () => {
             <span className="flex-1 text-center text-[15px]">카카오로 시작하기</span>
           </button>
 
-          {/* 네이버 */}
-          <button
+          {/* 네이버 — Supabase 커스텀 프로바이더 구조적 한계로 로그인 완료 불가, 서버 구현 전까지 숨김 */}
+          {/* <button
             onClick={() => handleSocialLogin('naver')}
             className="w-full flex items-center gap-3 bg-[#03C75A] rounded-2xl px-5 py-4 font-black text-white active:scale-[0.98] transition-all shadow-md shadow-green-100 hover:brightness-95"
           >
             <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center shrink-0 text-sm font-black">N</div>
             <span className="flex-1 text-center text-[15px]">네이버로 시작하기</span>
-          </button>
+          </button> */}
 
           {/* 구글 */}
           <button

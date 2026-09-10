@@ -34,6 +34,8 @@ export function ensureAnonymousSession(): Promise<string | null> {
   return anonAuthPromise;
 }
 
+const PENDING_LINK_KEY = 'pendingSocialLink';
+
 // 이미 있는 익명 세션(즐겨찾기 등 데이터)을 그대로 이어받아 실계정으로 승격.
 // 세션이 없거나 이미 실계정이면 일반 로그인으로 폴백.
 // provider: 기본 제공 프로바이더는 'kakao' 등 그대로, 커스텀 OIDC는 'custom:naver' 형식.
@@ -43,13 +45,36 @@ async function signInWithSocialProvider(provider: string): Promise<{ error: stri
   const { data: { user } } = await supabase.auth.getUser();
 
   if (user?.is_anonymous) {
+    // linkIdentity는 브라우저를 프로바이더로 리다이렉트했다가 돌아오는 방식이라, 이 시점의
+    // error는 "링크 자체가 시작조차 안 됨" 같은 즉시 실패만 잡음. "이미 다른 계정에 연결된
+    // 프로바이더" 같은 실패는 리다이렉트 왕복 후 서버에서 발생해서 여기로 안 돌아오므로,
+    // 돌아온 뒤 세션이 여전히 익명인지로 판단해서 resolvePendingSocialLink()에서 재시도함.
+    sessionStorage.setItem(PENDING_LINK_KEY, provider);
     const { error } = await supabase.auth.linkIdentity({ provider: provider as any });
-    if (error) return { error: error.message };
+    if (error) {
+      sessionStorage.removeItem(PENDING_LINK_KEY);
+      return { error: error.message };
+    }
     return { error: null };
   }
 
   const { error } = await supabase.auth.signInWithOAuth({ provider: provider as any });
   return { error: error ? error.message : null };
+}
+
+// linkIdentity 리다이렉트에서 돌아온 직후 앱 시작 시 한 번 호출.
+// 링크 시도가 있었는데도 세션이 여전히 익명이면 "이미 다른 계정에 연결된 프로바이더"로 실패한
+// 것 — 그 계정에 로그인하도록 일반 로그인(signInWithOAuth)으로 재시도한다.
+export async function resolvePendingSocialLink(): Promise<void> {
+  if (!supabase) return;
+  const provider = sessionStorage.getItem(PENDING_LINK_KEY);
+  if (!provider) return;
+  sessionStorage.removeItem(PENDING_LINK_KEY);
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user?.is_anonymous) {
+    await supabase.auth.signInWithOAuth({ provider: provider as any });
+  }
 }
 
 export const signInWithKakao = (): Promise<{ error: string | null }> => signInWithSocialProvider('kakao');
