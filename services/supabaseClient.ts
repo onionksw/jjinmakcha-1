@@ -33,3 +33,28 @@ export function ensureAnonymousSession(): Promise<string | null> {
 
   return anonAuthPromise;
 }
+
+// 이미 있는 익명 세션(즐겨찾기 등 데이터)을 그대로 이어받아 카카오 계정으로 승격.
+// 세션이 없거나 이미 실계정이면 일반 로그인으로 폴백.
+export async function signInWithKakao(): Promise<{ error: string | null }> {
+  if (!supabase) return { error: 'Supabase 설정이 없습니다.' };
+
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (user?.is_anonymous) {
+    const { error } = await supabase.auth.linkIdentity({ provider: 'kakao' });
+    if (error) return { error: error.message };
+    return { error: null };
+  }
+
+  const { error } = await supabase.auth.signInWithOAuth({ provider: 'kakao' });
+  return { error: error ? error.message : null };
+}
+
+export async function signOutSupabase(): Promise<void> {
+  if (!supabase) return;
+  await supabase.auth.signOut();
+  // 캐시된 익명 세션도 함께 무효화 — 안 그러면 로그아웃 후 재호출 시 이미 끊긴
+  // 세션의 uid를 그대로 돌려줘서 이후 요청이 전부 실패함
+  anonAuthPromise = null;
+}

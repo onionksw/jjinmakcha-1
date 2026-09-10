@@ -3,7 +3,7 @@ import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, 
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signOutSupabase, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
@@ -364,6 +364,27 @@ const App: React.FC = () => {
     return () => clearTimeout(timer);
   }, [isInStandaloneMode]);
 
+  // 실제 Supabase 로그인 상태 동기화 — 카카오 로그인 완료(리다이렉트 복귀 포함) 시
+  // 여기서 실계정 정보를 반영함. 익명 세션만 있을 때는 손대지 않음(베타 임시 로그인 기본값 유지).
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user;
+      if (user && !user.is_anonymous) {
+        setIsLoggedIn(true);
+        const identity = user.app_metadata?.provider as string | undefined;
+        const providerNames: Record<string, string> = { kakao: '카카오', google: '구글', naver: '네이버', apple: '애플' };
+        setLoginProvider(identity ? (providerNames[identity] ?? identity) : '');
+        const meta = user.user_metadata || {};
+        const displayName = meta.name || meta.full_name || meta.nickname || meta.preferred_username || meta.user_name;
+        if (displayName) setNickname(displayName);
+        const avatar = meta.avatar_url || meta.picture;
+        if (avatar) setProfileImage(avatar);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   // Mock History Data
   const historyData = [
       { id: 1, date: '10.27 (금)', route: '강남역 → 사당역', cost: '12,500원', saved: '8,000원', icon: '🍺', type: 'usage' },
@@ -716,14 +737,16 @@ const App: React.FC = () => {
       }
   };
 
-  const handleSocialLogin = (provider: 'kakao' | 'naver' | 'google' | 'apple') => {
-    const kakaoClientId  = import.meta.env.VITE_KAKAO_CLIENT_ID;
+  const handleSocialLogin = async (provider: 'kakao' | 'naver' | 'google' | 'apple') => {
     const naverClientId  = import.meta.env.VITE_NAVER_CLIENT_ID;
     const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
     const redirectUri    = encodeURIComponent(window.location.origin);
 
-    if (provider === 'kakao' && kakaoClientId) {
-      window.location.href = `https://kauth.kakao.com/oauth/authorize?client_id=${kakaoClientId}&redirect_uri=${redirectUri}&response_type=code`;
+    if (provider === 'kakao') {
+      // 실제 Supabase 카카오 로그인 — 성공하면 카카오 로그인 페이지로 리다이렉트되고,
+      // 돌아온 뒤 상태 동기화는 onAuthStateChange 리스너가 처리함
+      const { error } = await signInWithKakao();
+      if (error) alert(`카카오 로그인 연결에 실패했어요: ${error}`);
       return;
     }
     if (provider === 'naver' && naverClientId) {
@@ -751,7 +774,10 @@ const App: React.FC = () => {
   const handleDeleteAccount = async () => {
     // 실제 저장된 즐겨찾기(Supabase)를 전부 삭제 — 진짜 계정 데이터라 로그아웃만으로는 안 지워짐
     await Promise.all(favorites.map(f => deleteFavorite(f.id)));
+    await signOutSupabase();
     setFavorites([]);
+    setMonthlySavings(0);
+    setTotalSavings(0);
     setIsLoggedIn(false);
     setLoginProvider('');
     setNickname('프로 막차러');
@@ -759,6 +785,7 @@ const App: React.FC = () => {
     setEmergencyPhone('010-xxxx-xxxx');
     setShowDeleteAccountConfirm(false);
     setActiveTab('SEARCH');
+    ensureAnonymousSession().catch(() => {});
   };
 
   const openTaxiApp = (_app: 'kakao' | 'ut') => {
@@ -1626,7 +1653,16 @@ const App: React.FC = () => {
 
                 {/* 로그아웃 */}
                 <button
-                    onClick={() => { setIsLoggedIn(false); setLoginProvider(''); }}
+                    onClick={async () => {
+                        await signOutSupabase();
+                        setIsLoggedIn(false);
+                        setLoginProvider('');
+                        setFavorites([]);
+                        setMonthlySavings(0);
+                        setTotalSavings(0);
+                        // 로그아웃 후 새 익명 세션으로 재개 — 다음 로그인 전까지 임시로 즐겨찾기 등 이용 가능
+                        ensureAnonymousSession().catch(() => {});
+                    }}
                     className="w-full py-3.5 rounded-2xl bg-gray-100 text-gray-500 font-black text-sm hover:bg-gray-200 transition-colors active:scale-[0.98]"
                 >
                     로그아웃
