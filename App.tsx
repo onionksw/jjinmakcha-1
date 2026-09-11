@@ -5,7 +5,7 @@ import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces,
 import { findLatestDeparture } from './services/latestDepartureService';
 import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
-import { logSavings, getMonthlySavings, getTotalSavings, getLevel } from './services/savingsService';
+import { logSavings, getMonthlySavings, getTotalSavings, getLevel, getUsageHistory, UsageHistoryItem } from './services/savingsService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
 import CostChart from './components/CostChart';
 import RouteCardCountdown from './components/RouteCardCountdown';
@@ -37,6 +37,14 @@ const decodeSharedRoute = (encoded: string): SharedRouteSnapshot | null => {
   } catch {
     return null;
   }
+};
+
+// 이동 취향(마이페이지) → 검색에서 도보 필터를 따로 안 건드렸을 때 쓸 기본 도보 임계값(분).
+// undefined면 서비스 자체 기본값(20분, odsayService의 DEFAULT_WALK_THRESHOLD)을 그대로 씀.
+const WALK_THRESHOLD_BY_PREFERENCE: Record<'BALANCED' | 'CHEAP' | 'SHORT', number | undefined> = {
+  BALANCED: undefined,
+  CHEAP: 25,
+  SHORT: 10,
 };
 
 // Tab Definitions
@@ -275,7 +283,7 @@ const App: React.FC = () => {
   const [emergencyPhone, setEmergencyPhone] = useState('010-xxxx-xxxx');
   const [isEditingPhone, setIsEditingPhone] = useState(false);
   const [tempPhone, setTempPhone] = useState('');
-  const [walkPreference, setWalkPreference] = useState<'SHORT' | 'CHEAP'>('CHEAP');
+  const [walkPreference, setWalkPreference] = useState<'BALANCED' | 'SHORT' | 'CHEAP'>('BALANCED');
 
   // 공유 링크로 들어왔을 때 보여줄 정적 경로 요약 (로그인/서버조회 없음)
   const [sharedSnapshot, setSharedSnapshot] = useState<SharedRouteSnapshot | null>(null);
@@ -288,6 +296,14 @@ const App: React.FC = () => {
   const [favoriteFormLabel, setFavoriteFormLabel] = useState('');
   const [favoriteFormAddress, setFavoriteFormAddress] = useState('');
   const [favoriteFormKind, setFavoriteFormKind] = useState<FavoriteKind>('CUSTOM');
+
+  // 이용 히스토리 State (Supabase savings_log)
+  const [showHistorySheet, setShowHistorySheet] = useState(false);
+  const [historyItems, setHistoryItems] = useState<UsageHistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyOffset, setHistoryOffset] = useState(0);
+  const HISTORY_PAGE_SIZE = 20;
 
   // 절약금액 기록 / 귀가 중 모드 State
   const [monthlySavings, setMonthlySavings] = useState(0);
@@ -460,7 +476,7 @@ const App: React.FC = () => {
 
     try {
       // Fetch Routes from TMAP Transit API
-      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : undefined;
+      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : WALK_THRESHOLD_BY_PREFERENCE[walkPreference];
       const routeData = await getOdsayTransitRoutes(startLoc, endLoc, new Date(), walkThreshold);
       const { routes: fetchedRoutes, fullTaxiCost: fetchedCost } = routeData;
 
@@ -543,7 +559,7 @@ const App: React.FC = () => {
           depDate.setHours(h, m, 0, 0);
           if (depDate.getTime() < Date.now()) depDate.setDate(depDate.getDate() + 1);
         }
-        const newWalkThreshold = pendingFilters.maxWalk < 99 ? pendingFilters.maxWalk : undefined;
+        const newWalkThreshold = pendingFilters.maxWalk < 99 ? pendingFilters.maxWalk : WALK_THRESHOLD_BY_PREFERENCE[walkPreference];
         const { routes: r, fullTaxiCost: c } = await getOdsayTransitRoutes(startLoc, endLoc, depDate, newWalkThreshold, pendingFilters.excludeTaxi);
         if (r.length > 0) { setRoutes(r); setFullTaxiCost(c); }
         else { setError('해당 시각에 운행 중인 경로가 없습니다. 출발 시간을 변경해보세요.'); }
@@ -566,7 +582,7 @@ const App: React.FC = () => {
         depDate.setHours(h, m, 0, 0);
         if (depDate.getTime() < Date.now()) depDate.setDate(depDate.getDate() + 1);
       }
-      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : undefined;
+      const walkThreshold = filterMaxWalk < 99 ? filterMaxWalk : WALK_THRESHOLD_BY_PREFERENCE[walkPreference];
       const { routes: r, fullTaxiCost: c } = await getOdsayTransitRoutes(startLoc, endLoc, depDate, walkThreshold, filterExcludeTaxi);
       if (r.length > 0) { setRoutes(r); setFullTaxiCost(c); }
     } catch { /* ignore */ }
@@ -938,6 +954,16 @@ const App: React.FC = () => {
   const removeFavorite = async (id: string) => {
       const ok = await deleteFavorite(id);
       if (ok) setFavorites(prev => prev.filter(f => f.id !== id));
+  };
+
+  const loadHistory = async (reset: boolean) => {
+      const offset = reset ? 0 : historyOffset;
+      setHistoryLoading(true);
+      const { items, hasMore } = await getUsageHistory(HISTORY_PAGE_SIZE, offset);
+      setHistoryItems(prev => reset ? items : [...prev, ...items]);
+      setHistoryHasMore(hasMore);
+      setHistoryOffset(offset + items.length);
+      setHistoryLoading(false);
   };
 
   const saveNickname = () => {
@@ -1520,6 +1546,32 @@ const App: React.FC = () => {
             </div>
 
             <div className="p-4 space-y-3">
+                {/* 나의 활동 */}
+                <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
+                    <div className="px-5 pt-4 pb-2">
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-wide">나의 활동</p>
+                    </div>
+
+                    {/* 이용 히스토리 */}
+                    <button
+                        onClick={() => {
+                            setShowHistorySheet(true);
+                            if (historyItems.length === 0) loadHistory(true);
+                        }}
+                        className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
+                    >
+                        <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center shrink-0">
+                            <Clock size={18} className="text-brandBlue" />
+                        </div>
+                        <div className="flex-1 text-left min-w-0">
+                            <p className="font-bold text-gray-800 text-sm">이용 히스토리</p>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">최근 이동 내역 보기</p>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300 shrink-0" />
+                    </button>
+                    <div className="pb-2" />
+                </div>
+
                 {/* 나의 설정 */}
                 <div className="bg-white rounded-3xl overflow-hidden border border-gray-100 shadow-sm">
                     <div className="px-5 pt-4 pb-2">
@@ -1545,21 +1597,23 @@ const App: React.FC = () => {
 
                     <div className="mx-5 h-px bg-gray-50" />
 
-                    {/* 이동 취향 */}
+                    {/* 이동 취향 — 검색에서 도보 필터를 따로 안 정했을 때 쓸 기본 성향(3단계 순환) */}
                     <button
-                        onClick={() => setWalkPreference(walkPreference === 'CHEAP' ? 'SHORT' : 'CHEAP')}
+                        onClick={() => setWalkPreference(
+                            walkPreference === 'BALANCED' ? 'CHEAP' : walkPreference === 'CHEAP' ? 'SHORT' : 'BALANCED'
+                        )}
                         className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100"
                     >
-                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10' : 'bg-purple-50'}`}>
-                            <Footprints size={18} className={walkPreference === 'CHEAP' ? 'text-brandMint' : 'text-purple-500'} />
+                        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10' : walkPreference === 'SHORT' ? 'bg-purple-50' : 'bg-blue-50'}`}>
+                            <Footprints size={18} className={walkPreference === 'CHEAP' ? 'text-brandMint' : walkPreference === 'SHORT' ? 'text-purple-500' : 'text-brandBlue'} />
                         </div>
                         <div className="flex-1 text-left">
                             <p className="font-bold text-gray-800 text-sm">이동 취향</p>
                             <p className="text-xs text-gray-400 mt-0.5">
-                                {walkPreference === 'CHEAP' ? '💸 비용 절약형' : '🚶 최소 도보형'}
+                                {walkPreference === 'CHEAP' ? '💸 비용 절약형' : walkPreference === 'SHORT' ? '🚶 최소 도보형' : '⚖️ 기본형'}
                             </p>
                         </div>
-                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10 text-brandMint' : 'bg-purple-50 text-purple-500'}`}>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full shrink-0 ${walkPreference === 'CHEAP' ? 'bg-brandMint/10 text-brandMint' : walkPreference === 'SHORT' ? 'bg-purple-50 text-purple-500' : 'bg-blue-50 text-brandBlue'}`}>
                             탭으로 전환
                         </span>
                     </button>
@@ -1967,6 +2021,59 @@ const App: React.FC = () => {
                                 <button onClick={saveFavoriteForm} className="flex-1 py-4 text-white bg-brandBlue rounded-2xl font-black shadow-md shadow-blue-200">저장</button>
                             </div>
                         </>
+                    )}
+                </div>
+            </div>
+        )}
+
+        {/* 이용 히스토리 바텀시트 */}
+        {showHistorySheet && (
+            <div className="absolute inset-0 z-[60] bg-black/60 flex items-end backdrop-blur-sm">
+                <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+                    <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
+
+                    <div className="flex items-center justify-between mb-1">
+                        <p className="text-lg font-black text-gray-800">이용 히스토리</p>
+                        <button onClick={() => setShowHistorySheet(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                            <X size={20} />
+                        </button>
+                    </div>
+                    <p className="text-sm text-gray-400 mb-4">최근에 절약한 여정들을 확인해보세요 🎉</p>
+
+                    {historyLoading && historyItems.length === 0 ? (
+                        <p className="text-center text-sm text-gray-400 py-8">불러오는 중...</p>
+                    ) : historyItems.length === 0 ? (
+                        <p className="text-center text-sm text-gray-400 py-8">아직 이용 기록이 없어요 — 경로 검색 후 '이 경로로 귀가하기'를 눌러보세요!</p>
+                    ) : (
+                        <div className="space-y-2 mb-2">
+                            {historyItems.map(item => {
+                                const d = new Date(item.createdAt);
+                                const dateLabel = d.toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' });
+                                const timeLabel = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+                                return (
+                                    <div key={item.id} className="flex items-center gap-3 bg-gray-50 rounded-2xl px-4 py-3">
+                                        <div className="text-center shrink-0 w-12">
+                                            <p className="text-[11px] font-bold text-gray-400">{dateLabel}</p>
+                                            <p className="text-[10px] text-gray-300">{timeLabel}</p>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-gray-800 text-sm truncate">{item.startLoc} → {item.endLoc}</p>
+                                        </div>
+                                        <span className="text-xs font-black text-brandMint shrink-0">+{item.savedAmount.toLocaleString()}원</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {historyHasMore && (
+                        <button
+                            onClick={() => loadHistory(false)}
+                            disabled={historyLoading}
+                            className="w-full py-3 rounded-2xl text-sm border-2 border-dashed border-gray-200 text-gray-500 font-bold hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            {historyLoading ? '불러오는 중...' : '더 보기'}
+                        </button>
                     )}
                 </div>
             </div>

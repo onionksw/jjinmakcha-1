@@ -60,6 +60,40 @@ async function sumSince(sinceIso: string | null): Promise<number> {
 export const getMonthlySavings = (): Promise<number> => sumSince(monthStartUtcIso());
 export const getTotalSavings = (): Promise<number> => sumSince(null);
 
+export interface UsageHistoryItem {
+  id: string;
+  startLoc: string;
+  endLoc: string;
+  savedAmount: number;
+  createdAt: string;
+}
+
+export async function getUsageHistory(limit: number, offset: number): Promise<{ items: UsageHistoryItem[]; hasMore: boolean }> {
+  if (!supabase) return { items: [], hasMore: false };
+  await ensureAnonymousSession();
+  try {
+    const { data, error } = await supabase
+      .from('savings_log')
+      .select('id, start_loc, end_loc, saved_amount, created_at')
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit); // limit보다 1개 더 가져와서 hasMore 판단
+    if (error) throw error;
+    const rows = data || [];
+    const hasMore = rows.length > limit;
+    const items: UsageHistoryItem[] = rows.slice(0, limit).map((row: any) => ({
+      id: row.id,
+      startLoc: row.start_loc,
+      endLoc: row.end_loc,
+      savedAmount: row.saved_amount,
+      createdAt: row.created_at,
+    }));
+    return { items, hasMore };
+  } catch (e) {
+    console.error('이용 히스토리 조회 오류:', e);
+    return { items: [], hasMore: false };
+  }
+}
+
 export interface LevelInfo {
   level: number;
   label: string;
