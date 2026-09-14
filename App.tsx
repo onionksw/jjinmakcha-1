@@ -901,6 +901,10 @@ const App: React.FC = () => {
               setCachedCoordinates(homeFavorite.address, { lat: homeFavorite.lat, lon: homeFavorite.lon });
           }
           setActiveTab('SEARCH');
+      } else if (!loginProvider) {
+          // 집 주소 등록은 마이페이지 안에서 이뤄지는데, 마이페이지 자체가
+          // 로그인이 필요해서 미리 로그인부터 유도 (안 그러면 로그인 안내 화면만 보임)
+          setShowLoginOverlay(true);
       } else {
           setActiveTab('MY_PAGE');
           setShowFavoritesSheet(true);
@@ -1039,7 +1043,7 @@ const App: React.FC = () => {
       {/* 우측 상단 프로필 버튼 */}
       <div className="flex justify-end mb-2">
           <button
-              onClick={() => { if (isLoggedIn) setActiveTab('MY_PAGE'); else setShowLoginOverlay(true); }}
+              onClick={() => { if (loginProvider) setActiveTab('MY_PAGE'); else setShowLoginOverlay(true); }}
               className="w-10 h-10 rounded-full bg-white border-2 border-gray-100 shadow-sm flex items-center justify-center overflow-hidden hover:scale-105 transition-transform active:scale-95"
           >
               {profileImage
@@ -3406,10 +3410,32 @@ const App: React.FC = () => {
             {renderContent()}
        </div>
 
-       {/* 내 정보 오버레이 */}
+       {/* 내 정보 오버레이 — 실제 로그인(loginProvider)한 경우에만 진입 허용 */}
        {activeTab === 'MY_PAGE' && (
            <div className="absolute inset-0 z-[80] animate-in slide-in-from-right-full duration-300">
-               {renderMyPage()}
+               {loginProvider ? renderMyPage() : (
+                   <div className="flex flex-col h-full bg-white">
+                       <header className="px-5 py-4 flex items-center gap-2">
+                           <button onClick={() => setActiveTab('SEARCH')} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
+                               <ChevronLeft size={24} />
+                           </button>
+                           <h2 className="text-xl font-black text-gray-800">내 정보</h2>
+                       </header>
+                       <div className="flex-1 flex flex-col items-center justify-center px-8 -mt-10">
+                           <img src="/icons/icon-512.png" alt="찐막차" className="w-16 h-16 rounded-2xl shadow-lg shadow-blue-200 mb-5" />
+                           <p className="text-center text-lg font-black text-gray-800 mb-2">로그인이 필요해요</p>
+                           <p className="text-center text-sm text-gray-400 font-medium leading-relaxed mb-7">
+                               로그인하면 즐겨찾기·절약 기록 등<br/>내 정보를 확인할 수 있어요
+                           </p>
+                           <button
+                               onClick={() => setShowLoginOverlay(true)}
+                               className="w-full bg-brandBlue text-white font-black text-lg py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform"
+                           >
+                               로그인하기
+                           </button>
+                       </div>
+                   </div>
+               )}
            </div>
        )}
 

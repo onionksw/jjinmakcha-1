@@ -852,6 +852,15 @@ export const getOdsayTransitRoutes = async (
     throw new Error('출발지 또는 도착지 좌표를 찾을 수 없습니다.');
   }
 
+  const baseMs = departureDate ? departureDate.getTime() : Date.now();
+  // 전액 택시 비용 조회는 대중교통 경로 조회·검증과 서로 의존관계가 없는데도
+  // 지금까지 그 뒤에서 순차로 기다리고 있었음 — 미리 병렬로 시작해서 기다리는
+  // 시간을 겹치게 함 (Tmap driving 경로 API 응답 시간만큼 검색이 그냥 느려지던 부분)
+  const straightKm = haversineKm(startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon);
+  const fullTaxiFarePromise = getRefinedTaxiFare(
+    startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon, baseMs, straightKm,
+  );
+
   // ODsay 폴백용 URL — 시각 지정(SearchDate/SearchTime)이 필요할 때만 사용
   let odsayUrl = `/api/odsay?SX=${startCoords.lon}&SY=${startCoords.lat}&EX=${endCoords.lon}&EY=${endCoords.lat}`;
   if (departureDate) {
@@ -886,18 +895,46 @@ export const getOdsayTransitRoutes = async (
     }
   }
 
+  // 같은 경로(같은 구간 시퀀스)는 중복 제거 — 시간표 검증 전에 먼저 걸러서
+  // 똑같은 경로를 여러 번 검증하느라 외부 API를 낭비 호출하지 않게 함
+  const pathKey = (p: any): string =>
+    (p.subPath || []).map((sp: any) => `${sp.trafficType}:${sp.startName ?? ''}>${sp.endName ?? ''}`).join('|');
+  {
+    const seenKeys = new Set<string>();
+    allPaths = allPaths.filter(p => {
+      const k = pathKey(p);
+      if (seenKeys.has(k)) return false;
+      seenKeys.add(k);
+      return true;
+    });
+  }
+
   let paths: any[];
   if (departureDate) {
-    // 시간표 검증(isPathRunnable)이 실제 외부 API를 호출하므로, 경로별로 순차 대기하면
-    // 카카오가 준 후보가 많을 때(10개 이상) 검색 하나에 수 초씩 걸림 — 전부 병렬로 처리
-    const runnableFlags = await Promise.all(allPaths.map(async (p) => {
+    const eligible = allPaths.filter(p => {
       const totalTime: number = p.info?.totalTime ?? 9999;
       if (totalTime > 240) return false;
       const sectionTime: number = (p.subPath || []).reduce((s: number, sp: any) => s + (sp.sectionTime || 0), 0);
-      if ((totalTime - sectionTime) > 30) return false;
-      return isPathRunnable(p, departureDate);
-    }));
-    paths = allPaths.filter((_, i) => runnableFlags[i]);
+      return (totalTime - sectionTime) <= 30;
+    });
+
+    // 시간표 검증(isPathRunnable)이 실제 외부 API를 호출하므로, 카카오가 후보를 아무리
+    // 많이 줘도 검증 대상을 "가장 빠른 후보 + 가장 저렴한 후보" 상위 몇 개로만 제한해서
+    // 검색 속도가 후보 개수에 비례해 느려지지 않게 함 (최종적으로도 3개만 쓰므로 충분)
+    const MAX_PER_DIMENSION = 6;
+    const byTimeTop = [...eligible].sort((a, b) => (a.info?.totalTime ?? 9999) - (b.info?.totalTime ?? 9999)).slice(0, MAX_PER_DIMENSION);
+    const byCostTop = [...eligible].sort((a, b) => (a.info?.payment ?? a.info?.totalFare ?? 9999) - (b.info?.payment ?? b.info?.totalFare ?? 9999)).slice(0, MAX_PER_DIMENSION);
+    const candidateKeys = new Set<string>();
+    const candidates: any[] = [];
+    for (const p of [...byTimeTop, ...byCostTop]) {
+      const k = pathKey(p);
+      if (candidateKeys.has(k)) continue;
+      candidateKeys.add(k);
+      candidates.push(p);
+    }
+
+    const runnableFlags = await Promise.all(candidates.map(p => isPathRunnable(p, departureDate)));
+    paths = candidates.filter((_, i) => runnableFlags[i]);
   } else {
     paths = allPaths;
   }
@@ -906,26 +943,9 @@ export const getOdsayTransitRoutes = async (
     throw new Error('해당 시각에 운행 중인 대중교통 경로가 없습니다.\n심야버스(N버스)를 확인하거나 택시를 이용해보세요.');
   }
 
-  // 같은 경로(같은 구간 시퀀스)는 중복 제거
-  const pathKey = (p: any): string =>
-    (p.subPath || []).map((sp: any) => `${sp.trafficType}:${sp.startName ?? ''}>${sp.endName ?? ''}`).join('|');
-  const uniquePaths: any[] = [];
-  const seenKeys = new Set<string>();
-  for (const p of paths) {
-    const k = pathKey(p);
-    if (seenKeys.has(k)) continue;
-    seenKeys.add(k);
-    uniquePaths.push(p);
-  }
-  paths = uniquePaths;
-
-  const baseMs = departureDate ? departureDate.getTime() : Date.now();
-
-  // 전액 택시 비용: 실제 도로 주행거리 기반 (Tmap 실패 시 직선거리 추정 폴백)
-  const straightKm = haversineKm(startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon);
-  const fullTaxiFare = await getRefinedTaxiFare(
-    startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon, baseMs, straightKm,
-  );
+  // 전액 택시 비용: 위에서 미리 시작해둔 조회 결과를 여기서 받음 (실제 도로 주행거리 기반,
+  // Tmap 실패 시 직선거리 추정 폴백)
+  const fullTaxiFare = await fullTaxiFarePromise;
   const fullTaxiCost = fullTaxiFare.cost;
   const fullTaxiMinutes = fullTaxiFare.minutes;
 
