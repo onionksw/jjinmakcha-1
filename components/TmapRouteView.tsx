@@ -259,18 +259,32 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
       });
 
 
-      // ── 도착 마커 (빨강): 실제 목적지 좌표 우선, 없으면 마지막 경로 좌표 사용 ──
       const lastSeg = segments[segments.length - 1];
       const endName = lastSeg?.endName || route.transferPoint || '도착';
       const destLat = route.destLat ?? allCoords[allCoords.length - 1].lat;
       const destLng = route.destLng ?? allCoords[allCoords.length - 1].lng;
+
+      // ── 전체 경로 맞춤 뷰를 마커 생성보다 먼저 적용해서 실제 줌 레벨을 얻음 ──
+      // (수도권 광역 경로처럼 넓게 축소될수록 고정 픽셀 마커가 서로 겹쳐 보이는
+      // 문제가 있어서, 줌 레벨에 비례해 마커 크기를 함께 줄임)
+      const bounds = new kakao.maps.LatLngBounds();
+      allCoords.forEach(c => bounds.extend(new kakao.maps.LatLng(c.lat, c.lng)));
+      bounds.extend(new kakao.maps.LatLng(destLat, destLng));
+      map.setBounds(bounds, 60, 60, 60, 60);
+
+      const zoomLevel = map.getLevel();
+      // level 4 이하(도보권 수준 확대)는 원래 크기 그대로, 넓어질수록 최대 0.55배까지 축소
+      const scale = Math.max(0.55, Math.min(1, 1 - (zoomLevel - 4) * 0.09));
+      const px = (base: number) => Math.round(base * scale);
+
+      // ── 도착 마커 (빨강): 실제 목적지 좌표 우선, 없으면 마지막 경로 좌표 사용 ──
       addOverlay(map, kakao, destLat, destLng, `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;">
-          <div style="width:42px;height:42px;background:#EF4444;border:3.5px solid white;border-radius:50%;
+        <div style="display:flex;flex-direction:column;align-items:center;gap:${px(10)}px;pointer-events:none;">
+          <div style="width:${px(42)}px;height:${px(42)}px;background:#EF4444;border:${Math.max(2, px(3.5))}px solid white;border-radius:50%;
             display:flex;align-items:center;justify-content:center;
-            box-shadow:0 4px 16px rgba(239,68,68,0.45);font-size:20px;">🏠</div>
-          <div style="background:#EF4444;color:white;border-radius:10px;padding:3px 10px;
-            font-size:10px;font-weight:900;white-space:nowrap;max-width:100px;
+            box-shadow:0 4px 16px rgba(239,68,68,0.45);font-size:${px(20)}px;">🏠</div>
+          <div style="background:#EF4444;color:white;border-radius:10px;padding:${Math.max(2, px(3))}px ${px(10)}px;
+            font-size:${Math.max(8, px(10))}px;font-weight:900;white-space:nowrap;max-width:100px;
             overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 8px rgba(239,68,68,0.35);">
             ${endName}
           </div>
@@ -290,29 +304,23 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
         const num   = stepNum++;
 
         addOverlay(map, kakao, pos.lat, pos.lng, `
-          <div style="display:flex;flex-direction:column;align-items:center;gap:10px;pointer-events:none;">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:${px(10)}px;pointer-events:none;">
             <div style="position:relative;">
-              <div style="width:38px;height:38px;background:${color};border:3px solid white;border-radius:50%;
+              <div style="width:${px(38)}px;height:${px(38)}px;background:${color};border:${Math.max(2, px(3))}px solid white;border-radius:50%;
                 display:flex;align-items:center;justify-content:center;
-                box-shadow:0 4px 12px rgba(0,0,0,0.22);font-size:17px;">${emoji}</div>
-              <div style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;
-                background:white;border:2px solid ${color};border-radius:50%;
+                box-shadow:0 4px 12px rgba(0,0,0,0.22);font-size:${px(17)}px;">${emoji}</div>
+              <div style="position:absolute;top:-5px;right:-5px;width:${Math.max(12, px(18))}px;height:${Math.max(12, px(18))}px;
+                background:white;border:${Math.max(1, px(2))}px solid ${color};border-radius:50%;
                 display:flex;align-items:center;justify-content:center;
-                font-size:9px;font-weight:900;color:${color};line-height:1;">${num}</div>
+                font-size:${Math.max(7, px(9))}px;font-weight:900;color:${color};line-height:1;">${num}</div>
             </div>
-            <div style="background:${color};color:white;border-radius:10px;padding:3px 9px;
-              font-size:10px;font-weight:900;white-space:nowrap;max-width:110px;
+            <div style="background:${color};color:white;border-radius:10px;padding:${Math.max(2, px(3))}px ${px(9)}px;
+              font-size:${Math.max(8, px(10))}px;font-weight:900;white-space:nowrap;max-width:110px;
               overflow:hidden;text-overflow:ellipsis;box-shadow:0 2px 6px rgba(0,0,0,0.18);">
               ${name}${time ? ` · ${time}` : ''}
             </div>
           </div>`);
       });
-
-      // ── 전체 경로 맞춤 뷰 (목적지 포함) ─────────────────────────────
-      const bounds = new kakao.maps.LatLngBounds();
-      allCoords.forEach(c => bounds.extend(new kakao.maps.LatLng(c.lat, c.lng)));
-      bounds.extend(new kakao.maps.LatLng(destLat, destLng));
-      map.setBounds(bounds, 60, 60, 60, 60);
 
     }).catch(err => {
       console.error('카카오맵 로드 실패:', err);

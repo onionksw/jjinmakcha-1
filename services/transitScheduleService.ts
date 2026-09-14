@@ -178,11 +178,16 @@ export async function isSubPathRunnable(sp: any, date: Date): Promise<boolean> {
   const known = preciseResults.filter((r): r is boolean => r !== null);
   if (known.length > 0) return known.some(Boolean);
 
-  // 폴백: 낮 시간(06:00~00:59)은 일반버스 운행 → pass
-  if (hour >= 6 || hour === 0) return true;
+  // 정밀 시간표를 못 가져온 경우(경기 광역 심야버스 등 서울 API 밖 노선)의 대분류 폴백
+  const routeTypes = await Promise.all(busNos.map(no => fetchRouteType(no)));
+
+  // 낮 시간(06:00~00:59): 대안 노선(lane) 중 심야버스가 아닌 게 하나라도 있으면 운행으로 간주.
+  // 패턴상 심야버스로 보이는데 routetp 조회까지 실패한 경우도 심야로 취급(N버스 번호 패턴, isNightBus와 동일 기준)
+  if (hour >= 6 || hour === 0) {
+    return busNos.some((no, i) => routeTypes[i] !== '16' && !/^N\d/i.test(no));
+  }
 
   // 01:00~05:59: 확실한 낮 전용 노선 유형만 차단, 나머지는 신뢰
-  const routeTypes = await Promise.all(busNos.map(no => fetchRouteType(no)));
   return routeTypes.some(rt => !DAY_ONLY_TYPES.has(rt ?? ''));
 }
 

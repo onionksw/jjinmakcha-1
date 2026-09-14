@@ -872,7 +872,7 @@ const App: React.FC = () => {
           dep: selectedRoute.departureTime,
           arr: arrivalTime,
           dur: selectedRoute.totalDuration,
-          cost: selectedRoute.totalCost,
+          cost: selectedRoute.hybridTotalCost,
           saved: selectedRoute.savedAmount,
           segs: selectedRoute.segments.map(seg => ({ t: seg.type, i: seg.instruction, d: seg.durationMinutes })),
       };
@@ -882,7 +882,7 @@ const App: React.FC = () => {
           objectType: 'feed',
           content: {
               title: `${startLoc} → ${endLoc}, 찐막차로 ${selectedRoute.savedAmount.toLocaleString()}원 절약!`,
-              description: `${selectedRoute.totalDuration}분 · ${selectedRoute.totalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`,
+              description: `${selectedRoute.totalDuration}분 · ${selectedRoute.hybridTotalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`,
               imageUrl: `${window.location.origin}/icons/icon-512.png`,
               link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
           },
@@ -3033,7 +3033,7 @@ const App: React.FC = () => {
                      </div>
                      <div className="flex items-center gap-1">
                          <CreditCard size={18} className="text-brandPink"/>
-                         <span>{selectedRoute.totalCost.toLocaleString()}원</span>
+                         <span>{selectedRoute.hybridTotalCost.toLocaleString()}원</span>
                      </div>
                  </div>
 

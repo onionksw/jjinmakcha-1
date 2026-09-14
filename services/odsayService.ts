@@ -824,6 +824,16 @@ function postProcessRoutes(routes: HybridRoute[]): HybridRoute[] {
   );
 }
 
+// 전액 택시 대비 절약률이 이 미만이면 추천에서 제외 — 시간 손해 대비 절약이
+// 너무 작으면(예: 15분 더 걸려서 6,650원만 아낌) 그냥 택시가 나은 선택이라고 판단
+const MIN_TAXI_SAVINGS_RATIO = 0.3;
+function filterBySavingsRatio(routes: HybridRoute[]): HybridRoute[] {
+  const qualifying = routes.filter(r => r.taxiCostOnly <= 0 || r.savedAmount / r.taxiCostOnly >= MIN_TAXI_SAVINGS_RATIO);
+  if (qualifying.length > 0 || routes.length === 0) return qualifying;
+  // 30% 기준을 넘는 경로가 하나도 없어도 완전히 빈 결과 대신 가장 저렴한 경로 하나는 보여줌
+  return [[...routes].sort((a, b) => a.hybridTotalCost - b.hybridTotalCost)[0]];
+}
+
 // ─── 공개 API ─────────────────────────────────────────────────────────────
 export const getOdsayTransitRoutes = async (
   startLoc: string,
@@ -921,7 +931,7 @@ export const getOdsayTransitRoutes = async (
 
   if (excludeTaxi) {
     const pureRoutes = await Promise.all(paths.slice(0, 3).map((p, i) => buildPureRoute(p, i, baseMs, fullTaxiCost, fullTaxiMinutes, endCoords.lat, endCoords.lon, startCoords.lat, startCoords.lon)));
-    return { routes: postProcessRoutes(pureRoutes), fullTaxiCost };
+    return { routes: postProcessRoutes(filterBySavingsRatio(pureRoutes)), fullTaxiCost };
   }
 
   const timeMode = detectTimeMode(baseMs);
@@ -966,5 +976,5 @@ export const getOdsayTransitRoutes = async (
     ),
   );
 
-  return { routes: postProcessRoutes(routes), fullTaxiCost };
+  return { routes: postProcessRoutes(filterBySavingsRatio(routes)), fullTaxiCost };
 };
