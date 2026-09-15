@@ -165,9 +165,6 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(true);
   const [splashMessage, setSplashMessage] = useState('');
 
-  // Beta Notice State (세션당 1회)
-  const [showBetaNotice, setShowBetaNotice] = useState(() => !sessionStorage.getItem('betaNoticeDismissed'));
-
   // 첫 사용자 온보딩 (기기당 1회 — 세션이 아니라 영구 저장)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try { return !localStorage.getItem('onboardingSeen'); } catch { return false; }
@@ -3358,31 +3355,6 @@ const App: React.FC = () => {
 
   return (
     <div className="max-w-md mx-auto h-screen bg-white text-gray-800 font-sans overflow-hidden shadow-2xl relative flex flex-col">
-       {/* 베타 안내 팝업 */}
-       {showBetaNotice && !showSplash && (
-         <div className="absolute inset-0 z-[95] bg-black/50 backdrop-blur-sm flex items-end justify-center animate-in fade-in duration-200">
-           <div className="bg-white w-full rounded-t-[2rem] p-7 shadow-2xl animate-in slide-in-from-bottom-4 duration-300">
-             <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-6" />
-             <div className="flex justify-center mb-4">
-               <div className="w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center text-2xl shadow-sm">
-                 🚧
-               </div>
-             </div>
-             <p className="text-center text-xl font-black text-gray-800 mb-2">베타 서비스 안내</p>
-             <p className="text-center text-sm text-gray-500 font-medium leading-relaxed mb-5">
-               현재 <span className="text-green-500 font-black">경로 탐색은 정상 동작</span>해요!<br/>
-               로그인은 실제 계정이 생성되지 않는<br/>테스트 로그인입니다.
-             </p>
-             <button
-               onClick={() => { setShowBetaNotice(false); sessionStorage.setItem('betaNoticeDismissed', '1'); }}
-               className="w-full bg-brandBlue text-white font-black text-base py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform"
-             >
-               확인했어요 👍
-             </button>
-           </div>
-         </div>
-       )}
-
        {/* 첫 사용자 온보딩 */}
        {showOnboarding && !showSplash && (
          <div className="absolute inset-0 z-[96] bg-black/50 backdrop-blur-sm flex items-end justify-center animate-in fade-in duration-200">
