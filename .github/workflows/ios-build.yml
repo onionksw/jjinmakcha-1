@@ -23,13 +23,23 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web assets and sync iOS
-        run: npm run cap:sync
+      - name: Build web assets (native mode)
+        run: npm run build:native 2>&1 | tee build.log
+
+      - name: Sync iOS
+        run: npx cap sync ios 2>&1 | tee -a build.log
+
+      - name: Upload log (always, for debugging)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
 
       - name: Build iOS app (unsigned, simulator SDK)
         run: |
