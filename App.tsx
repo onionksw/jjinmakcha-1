@@ -14,13 +14,15 @@ import RealTimeArrival from './components/RealTimeArrival';
 import TmapRouteView from './components/TmapRouteView';
 import PlaceSearchInput from './components/PlaceSearchInput';
 
-// 이벤트 트래킹 (fire-and-forget)
-const track = (event: 'visit' | 'search' | 'signup' | 'taxi') => {
+// 이벤트 트래킹 (fire-and-forget) — 자체 구글시트 로그 + GA4 둘 다로 전송
+const track = (event: 'visit' | 'search' | 'signup' | 'taxi', params?: Record<string, unknown>) => {
   fetch('/api/track', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event }),
   }).catch(() => {});
+
+  (window as any).gtag?.('event', event, params);
 };
 
 // 카카오톡 공유 링크용 인코딩 — 서버/DB 없이 URL에 통째로 담아서 전달 (한글 안전한 base64url,
@@ -394,6 +396,9 @@ const App: React.FC = () => {
         const identity = user.app_metadata?.provider as string | undefined;
         const providerNames: Record<string, string> = { kakao: '카카오', google: '구글', naver: '네이버', apple: '애플', 'custom:naver': '네이버' };
         setLoginProvider(identity ? (providerNames[identity] ?? identity) : '');
+        // 실제 로그인 성공 시점 트래킹 — INITIAL_SESSION(이미 로그인된 채로 새로고침)은
+        // 제외하고 진짜 로그인 액션(SIGNED_IN)만 집계
+        if (event === 'SIGNED_IN') track('signup', { provider: identity });
         const meta = user.user_metadata || {};
         const displayName = meta.name || meta.full_name || meta.nickname || meta.preferred_username || meta.user_name;
         if (displayName) setNickname(displayName);
@@ -789,11 +794,6 @@ const App: React.FC = () => {
       if (error) alert(`애플 로그인 연결에 실패했어요: ${error}`);
       return;
     }
-    track('signup');
-    const names: Record<string, string> = { kakao: '카카오', naver: '네이버', google: '구글', apple: '애플' };
-    setLoginProvider(names[provider]);
-    setIsLoggedIn(true);
-    setShowLoginOverlay(false);
   };
 
   const requireLogin = (action: () => void) => {
