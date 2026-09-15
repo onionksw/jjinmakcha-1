@@ -5,6 +5,10 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    // Capacitor 네이티브 앱은 dist/를 그대로 번들링해서 로컬 파일로 실행하기 때문에
+    // 오프라인 캐싱용 PWA 서비스워커가 필요 없고, 오히려 리빌드해도 캐시된 옛 파일을
+    // 계속 보여주는 충돌을 일으킬 수 있어 네이티브 빌드에서는 아예 뺌.
+    const isCapacitorBuild = process.env.CAPACITOR_BUILD === 'true';
     const TAGO_KEY = env.TAGO_API_KEY || '';
     const SEOUL_KEY = env.SEOUL_SUBWAY_API_KEY || 'sample';
     const SEOUL_BUS_KEY = env.SEOUL_BUS_API_KEY || '';
@@ -36,7 +40,7 @@ export default defineConfig(({ mode }) => {
         },
         plugins: [
             react(),
-            VitePWA({
+            ...(isCapacitorBuild ? [] : [VitePWA({
                 registerType: 'autoUpdate',
                 includeAssets: ['icons/icon.svg'],
                 manifest: {
@@ -78,7 +82,7 @@ export default defineConfig(({ mode }) => {
                         },
                     ],
                 },
-            }),
+            })]),
             {
                 name: 'api-dev-middleware',
                 configureServer(server) {

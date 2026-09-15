@@ -1,4 +1,5 @@
 import { lineNameToSubwayId } from './realtimeService';
+import { API_BASE } from './apiBase';
 
 /**
  * 대중교통 운행 스케줄 검증 서비스
@@ -33,7 +34,7 @@ async function fetchRouteType(busNo: string): Promise<string | null> {
 
   try {
     const res = await fetch(
-      `/api/tago-route-type?cityCode=11&routeNo=${encodeURIComponent(busNo)}`
+      `${API_BASE}/api/tago-route-type?cityCode=11&routeNo=${encodeURIComponent(busNo)}`
     );
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
@@ -83,7 +84,7 @@ async function fetchBusSchedule(busNo: string): Promise<{ firstMin: number | nul
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   try {
-    const res = await fetch(`/api/seoul-bus?routeNo=${encodeURIComponent(busNo)}&routeOnly=1`);
+    const res = await fetch(`${API_BASE}/api/seoul-bus?routeNo=${encodeURIComponent(busNo)}&routeOnly=1`);
     const data = await res.json();
     if (!data.found) {
       const result = { firstMin: null, lastMin: null };
@@ -119,7 +120,7 @@ async function fetchSubwayEdgeTimes(stationName: string, subwayId: string): Prom
 
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
-    const res = await fetch(`/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
+    const res = await fetch(`${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
     const data = await res.json();
     // 방향(상/하행)을 구분하지 않고, 둘 중 하나라도 다니면 운행으로 간주 (허용적 폴백)
     const firsts = [data.firstTrain?.U, data.firstTrain?.D].filter(Boolean).map(hhmmToServiceMin).filter((v: number | null): v is number => v !== null);

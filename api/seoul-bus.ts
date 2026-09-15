@@ -25,6 +25,8 @@ const fetchJson = async (url: string) => {
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
   const { stationName, routeNo, routeOnly } = req.query as Record<string, string>;
 
   // 정류소 없이 노선 자체의 첫차/막차 시각만 필요할 때 (시각 지정 경로 검증용)

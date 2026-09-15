@@ -13,10 +13,11 @@ import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
 import TmapRouteView from './components/TmapRouteView';
 import PlaceSearchInput from './components/PlaceSearchInput';
+import { API_BASE } from './services/apiBase';
 
 // 이벤트 트래킹 (fire-and-forget) — 자체 구글시트 로그 + GA4 둘 다로 전송
 const track = (event: 'visit' | 'search' | 'signup' | 'taxi', params?: Record<string, unknown>) => {
-  fetch('/api/track', {
+  fetch(`${API_BASE}/api/track`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ event }),

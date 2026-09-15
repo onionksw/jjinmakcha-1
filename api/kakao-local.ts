@@ -16,6 +16,8 @@ const LOCAL_ENDPOINTS: Record<string, string> = {
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
   const { type, ...params } = req.query as Record<string, string>;
 
   if (!API_KEY) {

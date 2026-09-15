@@ -1,7 +1,8 @@
 import { HybridRoute, RouteSegment } from '../types';
+import { API_BASE } from './apiBase';
 
-const KAKAO_PROXY = '/api/kakao-local';
-const NAVER_PROXY = '/api/naver-local';
+const KAKAO_PROXY = `${API_BASE}/api/kakao-local`;
+const NAVER_PROXY = `${API_BASE}/api/naver-local`;
 
 // ─── Haversine 직선거리 (m) ────────────────────────────────────────────────
 function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -212,7 +213,7 @@ export const getTagoCityCode = async (lat: number, lon: number): Promise<string>
 
     let code = '11';
     try {
-        const res = await fetch(`/api/tago-city-code?lat=${lat}&lon=${lon}`);
+        const res = await fetch(`${API_BASE}/api/tago-city-code?lat=${lat}&lon=${lon}`);
         const data = await res.json();
         if (data.cityCode) code = data.cityCode;
     } catch {}
@@ -259,7 +260,7 @@ async function fetchDrivingRoute(
     try {
         const origin = `${startLon},${startLat}`;
         const destination = `${endLon},${endLat}`;
-        const res = await fetch(`/api/kakao-local?type=directions&origin=${origin}&destination=${destination}`);
+        const res = await fetch(`${API_BASE}/api/kakao-local?type=directions&origin=${origin}&destination=${destination}`);
         const data = await res.json();
         const route = data.routes?.[0];
         if (route?.result_code === 0) {
@@ -318,7 +319,7 @@ async function fetchWalkingRoute(
     if (walkingCache.has(key)) return walkingCache.get(key)!;
 
     try {
-        const res = await fetch(`/api/kakao-local?type=walk&start_x=${startLon}&start_y=${startLat}&end_x=${endLon}&end_y=${endLat}`);
+        const res = await fetch(`${API_BASE}/api/kakao-local?type=walk&start_x=${startLon}&start_y=${startLat}&end_x=${endLon}&end_y=${endLat}`);
         const data = await res.json();
         if (data.status === 'OK' && data.route?.legs?.length) {
             const path: { lat: number; lng: number }[] = [];

@@ -7,6 +7,8 @@ const SITE_URL = process.env.ODSAY_REFERER
   || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+
   const { SX, SY, EX, EY, SearchType, SearchDate, SearchTime } = req.query as Record<string, string>;
 
   if (!API_KEY) {

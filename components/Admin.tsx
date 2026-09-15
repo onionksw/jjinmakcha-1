@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { API_BASE } from '../services/apiBase';
 
 interface Stats {
   totals: { visit: number; search: number; signup: number; taxi: number };
@@ -53,7 +54,7 @@ export default function Admin() {
     setDiagLoading(true);
     setDiagLog([]);
     try {
-      const res = await fetch('/api/track', {
+      const res = await fetch(`${API_BASE}/api/track`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ event: 'visit', debug: true }),
@@ -71,7 +72,7 @@ export default function Admin() {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`/api/admin-stats?password=${encodeURIComponent(pw)}&days=${encodeURIComponent(days)}`);
+      const res = await fetch(`${API_BASE}/api/admin-stats?password=${encodeURIComponent(pw)}&days=${encodeURIComponent(days)}`);
       if (res.status === 401) { setError('비밀번호가 틀렸습니다'); setAuthed(false); return; }
       const text = await res.text();
       let data: Stats & { notice?: string; error?: string };

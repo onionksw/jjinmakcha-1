@@ -1,0 +1,42 @@
+name: iOS build check
+
+# 서명 없이 시뮬레이터용으로 빌드만 성공하는지 확인하는 용도.
+# 공개 저장소라 macOS 러너가 무료로 제공됨.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ios/**'
+      - 'services/**'
+      - 'components/**'
+      - 'App.tsx'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - '.github/workflows/ios-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets and sync iOS
+        run: npm run cap:sync
+
+      - name: Build iOS app (unsigned, simulator SDK)
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build

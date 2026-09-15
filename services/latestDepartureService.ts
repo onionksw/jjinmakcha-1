@@ -1,5 +1,6 @@
 import { getCoordinates } from './tmapService';
 import { LDTResult } from '../types';
+import { API_BASE } from './apiBase';
 
 const BINARY_SEARCH_ITERATIONS = 8;
 
@@ -36,7 +37,7 @@ async function hasRouteAt(
   ex: number, ey: number,
   date: Date
 ): Promise<boolean> {
-  const url = `/api/odsay?SX=${sx}&SY=${sy}&EX=${ex}&EY=${ey}&SearchDate=${toSearchDate(date)}&SearchTime=${toSearchTime(date)}`;
+  const url = `${API_BASE}/api/odsay?SX=${sx}&SY=${sy}&EX=${ex}&EY=${ey}&SearchDate=${toSearchDate(date)}&SearchTime=${toSearchTime(date)}`;
   try {
     const res = await fetch(url);
     if (!res.ok) return false;

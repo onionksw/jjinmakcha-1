@@ -1,3 +1,5 @@
+import { API_BASE } from './apiBase';
+
 export interface BusArrivalInfo {
   routeNo: string;
   routeId?: string;
@@ -50,7 +52,7 @@ export const getSeoulBusArrivals = async (
   if (routeNo) params.set('routeNo', routeNo);
 
   try {
-    const res = await fetch(`/api/seoul-bus?${params}`);
+    const res = await fetch(`${API_BASE}/api/seoul-bus?${params}`);
     if (!res.ok) return { stationName, arrivals: [] };
     const data = await res.json();
     if (data.error) return { stationName, arrivals: [] };
@@ -75,7 +77,7 @@ export const getBusArrivals = async (
   if (routeNo) params.set('routeNo', routeNo);
 
   try {
-    const res = await fetch(`/api/tago-arrival?${params}`);
+    const res = await fetch(`${API_BASE}/api/tago-arrival?${params}`);
     if (!res.ok) return { stationName, arrivals: [] };
     const data = await res.json();
     if (data.error) return { stationName, arrivals: [] };
@@ -90,7 +92,7 @@ export const getBusLocations = async (
   cityCode = '11'
 ): Promise<BusLocation[]> => {
   try {
-    const res = await fetch(`/api/tago-location?cityCode=${cityCode}&routeNo=${encodeURIComponent(routeNo)}`);
+    const res = await fetch(`${API_BASE}/api/tago-location?cityCode=${cityCode}&routeNo=${encodeURIComponent(routeNo)}`);
     if (!res.ok) return [];
     const data = await res.json();
     return data.buses || [];

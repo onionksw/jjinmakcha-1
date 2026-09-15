@@ -1,6 +1,7 @@
 import { HybridRoute, RouteSegment } from '../types';
 import { getCoordinates, getDrivingDistance, getDrivingRoutePath, getWalkingRoute, getWalkingRoutePath, isOutsideSeoul } from './tmapService';
 import { isPathRunnable } from './transitScheduleService';
+import { API_BASE } from './apiBase';
 
 type HybridStrategy = 'time-saving' | 'cost-saving' | 'balanced';
 type TimeMode = 'day' | 'night';
@@ -200,7 +201,7 @@ function kakaoRouteToOdsayPath(
 async function fetchKakaoTransitPaths(
   startLat: number, startLon: number, endLat: number, endLon: number,
 ): Promise<any[]> {
-  const url = `/api/kakao-local?type=transit&start_x=${startLon}&start_y=${startLat}&end_x=${endLon}&end_y=${endLat}`;
+  const url = `${API_BASE}/api/kakao-local?type=transit&start_x=${startLon}&start_y=${startLat}&end_x=${endLon}&end_y=${endLat}`;
   const res = await fetch(url);
   const data = await res.json();
   if (data.status !== 'OK' || !data.routes?.length) {
@@ -862,7 +863,7 @@ export const getOdsayTransitRoutes = async (
   );
 
   // ODsay 폴백용 URL — 시각 지정(SearchDate/SearchTime)이 필요할 때만 사용
-  let odsayUrl = `/api/odsay?SX=${startCoords.lon}&SY=${startCoords.lat}&EX=${endCoords.lon}&EY=${endCoords.lat}`;
+  let odsayUrl = `${API_BASE}/api/odsay?SX=${startCoords.lon}&SY=${startCoords.lat}&EX=${endCoords.lon}&EY=${endCoords.lat}`;
   if (departureDate) {
     const sDate = `${departureDate.getFullYear()}${pad2(departureDate.getMonth() + 1)}${pad2(departureDate.getDate())}`;
     const sTime = `${pad2(departureDate.getHours())}${pad2(departureDate.getMinutes())}`;

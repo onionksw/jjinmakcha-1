@@ -1,3 +1,5 @@
+import { API_BASE } from './apiBase';
+
 const SUBWAY_LINE_MAP: Record<string, string> = {
   '1001': '1호선', '1002': '2호선', '1003': '3호선', '1004': '4호선',
   '1005': '5호선', '1006': '6호선', '1007': '7호선', '1008': '8호선',
@@ -49,7 +51,7 @@ export const getSubwayTimetable = async (
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     // wayCode로 방향 고정: 1→U(상행), 2→D(하행), 없으면 둘 다 조회
     const dir = wayCode === 1 ? 'U' : wayCode === 2 ? 'D' : '';
-    const url = `/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}${dir ? `&dir=${dir}` : ''}`;
+    const url = `${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}${dir ? `&dir=${dir}` : ''}`;
     const res = await fetch(url);
     const data = await res.json();
     if (!data.trains || data.trains.length === 0) {
@@ -95,7 +97,7 @@ export interface BusArrival {
 export const getSubwayArrivals = async (stationName: string, direction?: string, subwayId?: string): Promise<SubwayArrival[]> => {
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
-    const url = `/api/subway?station=${encodeURIComponent(clean)}`;
+    const url = `${API_BASE}/api/subway?station=${encodeURIComponent(clean)}`;
 
     const res = await fetch(url);
     const data = await res.json();
