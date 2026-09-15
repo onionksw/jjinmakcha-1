@@ -819,13 +819,33 @@ const App: React.FC = () => {
     ensureAnonymousSession().catch(() => {});
   };
 
-  const openTaxiApp = (_app: 'kakao' | 'ut') => {
+  // 우티(UT)는 최근 "Uber Taxi"로 브랜드 통합됨 — 우버 자체 스킴/앱 재사용
+  const TAXI_APP_CONFIG: Record<'kakao' | 'ut', { scheme: string; iosAppId: string; androidPackage: string }> = {
+    kakao: { scheme: 'kakaot://', iosAppId: '981110422', androidPackage: 'com.kakao.taxi' },
+    ut:    { scheme: 'uber://', iosAppId: '368677368', androidPackage: 'com.ubercab' },
+  };
+
+  // 앱이 설치돼있으면 스킴으로 바로 열고, 일정 시간 안에 화면 전환(앱 실행)이 감지 안 되면
+  // 스토어 페이지로 폴백 — 커스텀 스킴은 공식 문서가 없어 실제 기기 테스트로 확인 필요
+  const openTaxiApp = (app: 'kakao' | 'ut') => {
       track('taxi');
       setShowTaxiSelector(false);
-      window.open(
-        'https://docs.google.com/forms/d/e/1FAIpQLSd3IEoCHg0TW-9hc4FV7jzQfmh_UdzbbS8CUPcEDEpy8r2Tug/viewform?usp=header',
-        '_blank',
-      );
+      const { scheme, iosAppId, androidPackage } = TAXI_APP_CONFIG[app];
+      const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const storeUrl = isIOS
+        ? `https://apps.apple.com/kr/app/id${iosAppId}`
+        : `https://play.google.com/store/apps/details?id=${androidPackage}`;
+
+      let appOpened = false;
+      const onHide = () => { appOpened = true; };
+      document.addEventListener('visibilitychange', onHide, { once: true });
+
+      window.location.href = scheme;
+
+      setTimeout(() => {
+        document.removeEventListener('visibilitychange', onHide);
+        if (!appOpened) window.location.href = storeUrl;
+      }, 1500);
   };
 
   const handleStartCommute = async () => {
@@ -3146,12 +3166,12 @@ const App: React.FC = () => {
                            </button>
                            <button
                                onClick={() => openTaxiApp('ut')}
-                               className="w-full flex items-center gap-4 bg-[#FF6B00] rounded-2xl px-5 py-4 active:scale-[0.98] transition-transform"
+                               className="w-full flex items-center gap-4 bg-black rounded-2xl px-5 py-4 active:scale-[0.98] transition-transform"
                            >
-                               <div className="w-11 h-11 rounded-xl bg-white/20 flex items-center justify-center shrink-0 text-xl font-black text-white">U</div>
+                               <div className="w-11 h-11 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-xl font-black text-white">U</div>
                                <div className="flex-1 text-left">
-                                   <p className="font-black text-white">UT (우티)</p>
-                                   <p className="text-xs text-orange-100 font-medium">SKT · Uber</p>
+                                   <p className="font-black text-white">Uber Taxi</p>
+                                   <p className="text-xs text-gray-400 font-medium">우버 (구 우티)</p>
                                </div>
                                <ChevronRight size={18} className="text-white/70 shrink-0" />
                            </button>
