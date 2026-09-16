@@ -11,12 +11,14 @@
     "cap:sync": "npm run build:native && npx cap sync"
   },
   "dependencies": {
+    "@capacitor-firebase/messaging": "^8.5.1",
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2",
     "@supabase/supabase-js": "^2.112.4",
     "@types/leaflet": "^1.9.21",
+    "firebase": "^12.19.0",
     "jose": "^5.10.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.556.0",

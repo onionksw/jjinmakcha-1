@@ -7,3 +7,5 @@ DerivedData/
 .swiftpm/config/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+# cap sync가 SPM packageOptions symlink 옵션으로 생성하는 로컬 심볼릭 링크
+symlinks/

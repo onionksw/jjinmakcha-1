@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "469917578392",
+    "project_id": "jjinmakcha-3bcef",
+    "storage_bucket": "jjinmakcha-3bcef.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:469917578392:android:a54d931cab8f3145df0ced",
+        "android_client_info": {
+          "package_name": "com.jjinmakcha.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAYqiSs9AbYty5bfe6KQcoNMsdAeQr5gEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

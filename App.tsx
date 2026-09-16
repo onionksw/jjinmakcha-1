@@ -6,6 +6,9 @@ import { findLatestDeparture } from './services/latestDepartureService';
 import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel, getUsageHistory, UsageHistoryItem } from './services/savingsService';
+import { registerForPush, addForegroundNotificationListener } from './services/pushService';
+import { createPushAlarm } from './services/alarmService';
+import { getSubwayArrivals, resolveSubwayDirection, lineNameToSubwayId } from './services/realtimeService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
 import CostChart from './components/CostChart';
 import RouteCardCountdown from './components/RouteCardCountdown';
@@ -414,6 +417,14 @@ const App: React.FC = () => {
     return () => subscription.unsubscribe();
   }, []);
 
+  // 앱이 켜져있는 동안 푸시가 도착하면(예: 막차 알림) 시스템 알림이 자동으로 안 떠서
+  // 직접 화면에 띄워줌 — 앱이 꺼져있을 땐 OS가 알아서 띄워주므로 이 리스너와 무관
+  useEffect(() => {
+    addForegroundNotificationListener((title, body) => {
+      alert(`${title}\n${body}`);
+    });
+  }, []);
+
   // Mock History Data
   const historyData = [
       { id: 1, date: '10.27 (금)', route: '강남역 → 사당역', cost: '12,500원', saved: '8,000원', icon: '🍺', type: 'usage' },
@@ -697,60 +708,70 @@ const App: React.FC = () => {
       setIsNotiModalOpen(true);
   };
 
-  const handleSetNotification = (minutes: number | string) => {
+  const handleSetNotification = async (minutes: number | string) => {
       setIsNotiModalOpen(false);
 
       if (typeof minutes === 'string') return;
 
       const route = routes.find(r => r.id === activeRouteId);
-      if (!route?.departureTime) {
+      if (!route) {
+          alert('경로 정보를 찾을 수 없어요.');
+          return;
+      }
+
+      // route.departureTime은 "검색을 실행한 시각"일 뿐 실제 탑승 시각이 아님(항상 지금
+      // 시각으로 채워짐) — 지하철은 RouteCardCountdown과 동일하게 실시간 도착정보로,
+      // 그 외(버스 등)는 해당 구간의 실제 예정 시각(firstTransitSeg.departureTime)으로 계산
+      const firstTransitSeg = route.segments.find(s => s.type !== 'walk');
+      let departureMs: number | null = null;
+
+      if (firstTransitSeg?.type === 'subway' && firstTransitSeg.startName) {
+          const clean = firstTransitSeg.startName.replace(/역$/, '').trim();
+          const dir = resolveSubwayDirection(firstTransitSeg.lineName, firstTransitSeg.wayCode);
+          const sid = lineNameToSubwayId(firstTransitSeg.lineName || '') || undefined;
+          const arrivals = await getSubwayArrivals(clean, dir, sid);
+          const catchable = arrivals.find(a => a.minutesLeft >= route.walkMinutes) || arrivals[arrivals.length - 1];
+          if (catchable) departureMs = Date.now() + catchable.minutesLeft * 60000;
+      } else if (firstTransitSeg?.departureTime) {
+          const [h, m] = firstTransitSeg.departureTime.split(':').map(Number);
+          const target = new Date();
+          target.setHours(h, m, 0, 0);
+          if (target.getTime() < Date.now()) target.setDate(target.getDate() + 1);
+          departureMs = target.getTime();
+      }
+
+      if (departureMs === null) {
           alert('막차 시간 정보를 찾을 수 없어요.');
           return;
       }
 
-      const [h, m] = route.departureTime.split(':').map(Number);
       const now = new Date();
-      const departure = new Date(now);
-      departure.setHours(h, m, 0, 0);
-      if (departure.getTime() <= now.getTime()) {
-          departure.setDate(departure.getDate() + 1);
-      }
-
-      const notifAt = new Date(departure.getTime() - minutes * 60 * 1000);
-      const msDelay = notifAt.getTime() - now.getTime();
-
-      if (msDelay < 0) {
+      const notifAt = new Date(departureMs - minutes * 60 * 1000);
+      if (notifAt.getTime() <= now.getTime()) {
           alert(`이미 막차 ${minutes}분 이내예요! 🏃 지금 바로 출발하세요!`);
           return;
       }
 
-      const scheduleNotif = () => {
-          setTimeout(() => {
-              new Notification('찐막차 알림 🚌', {
-                  body: `출발 ${minutes}분 전이에요! 지금 출발하세요!`,
-                  icon: '/favicon.ico',
-                  tag: 'jjinmakcha-alert',
-                  requireInteraction: true,
-              });
-          }, msDelay);
-          const minLeft = Math.round(msDelay / 60000);
-          alert(`출발 ${minutes}분 전(${minLeft}분 후)에 알림을 드릴게요! 🔔`);
-      };
-
-      if (!('Notification' in window)) {
-          alert('이 브라우저는 알림을 지원하지 않아요.');
+      // 브라우저 타이머(앱을 꺼두면 안 울림) 대신 서버에 예약해두고, 정확한 시각에
+      // 실제 푸시로 발송 — 웹(PWA)에서는 registerForPush가 null을 반환해 조용히 스킵됨
+      const token = await registerForPush();
+      if (!token) {
+          alert('푸시 알림 권한이 필요해요. 설정에서 알림을 허용해주세요.');
           return;
       }
 
-      if (Notification.permission === 'granted') {
-          scheduleNotif();
-      } else if (Notification.permission === 'denied') {
-          alert('알림이 차단되어 있어요. 브라우저 설정에서 알림을 허용해주세요.');
+      const ok = await createPushAlarm(
+          token,
+          notifAt,
+          '찐막차 알림 🚌',
+          `출발 ${minutes}분 전이에요! 지금 출발하세요!`,
+      );
+
+      if (ok) {
+          const minLeft = Math.round((notifAt.getTime() - now.getTime()) / 60000);
+          alert(`출발 ${minutes}분 전(${minLeft}분 후)에 알림을 드릴게요! 🔔`);
       } else {
-          Notification.requestPermission().then(perm => {
-              if (perm === 'granted') scheduleNotif();
-              else alert('알림 권한을 허용해야 알림을 받을 수 있어요.');
-          });
+          alert('알림 설정에 실패했어요. 잠시 후 다시 시도해주세요.');
       }
   };
 
