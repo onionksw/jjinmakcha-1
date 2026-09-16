@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// 릴리즈 서명 설정 — 로컬은 android/keystore.properties(git 제외)에서, CI는 같은 파일을
+// 워크플로가 시크릿으로부터 생성해서 넣어줌. 파일이 없으면(설정 전) 서명 없이 빌드됨.
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasKeystoreProperties = keystorePropertiesFile.exists()
+if (hasKeystoreProperties) {
+    // Properties.load(InputStream)는 기본적으로 ISO-8859-1로 읽어서 storeFile 경로에
+    // 한글이 있으면(예: D:\권시우\...) 깨짐 — UTF-8로 명시해서 읽어야 함
+    keystoreProperties.load(new InputStreamReader(new FileInputStream(keystorePropertiesFile), "UTF-8"))
+}
+
 android {
     namespace = "com.jjinmakcha.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +27,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasKeystoreProperties) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig hasKeystoreProperties ? signingConfigs.release : null
         }
     }
 }

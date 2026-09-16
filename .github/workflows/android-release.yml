@@ -1,0 +1,61 @@
+name: Android release build
+
+# 서명된 릴리즈 AAB를 만들어서 아티팩트로 업로드 — 플레이스토어 업로드 전 확인용.
+# 키스토어는 저장소 시크릿(RELEASE_KEYSTORE_BASE64 등)에서 가져와 임시로만 파일로 복원함.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'android/**'
+      - 'services/**'
+      - 'components/**'
+      - 'App.tsx'
+      - 'capacitor.config.ts'
+      - 'package.json'
+      - '.github/workflows/android-release.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets (native mode) and sync Android
+        run: npm run cap:sync
+
+      - name: Restore keystore from secret
+        run: |
+          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+          cat > android/keystore.properties <<EOF
+          storeFile=release.keystore
+          storePassword=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
+          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          EOF
+
+      - name: Build signed release AAB
+        working-directory: android
+        run: ./gradlew bundleRelease
+
+      - name: Clean up keystore
+        if: always()
+        run: rm -f android/app/release.keystore android/keystore.properties
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-aab
+          path: android/app/build/outputs/bundle/release/app-release.aab
