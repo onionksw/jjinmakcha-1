@@ -57,17 +57,17 @@ jobs:
           cp "$PROFILE_PATH" ~/Library/MobileDevice/"Provisioning Profiles"/
 
       - name: Archive
+        # 서명 관련 값(CODE_SIGN_STYLE=Manual 등)은 커맨드라인 대신 App 타겟의
+        # Release 빌드 설정(project.pbxproj)에 직접 넣어둠 — 커맨드라인으로 넘기면
+        # Firebase 등 SPM 패키지의 리소스 번들 타겟에도 전역 적용되어 "does not
+        # support provisioning profiles" 에러가 남 (실제 CI에서 발생 확인됨)
         run: |
           xcodebuild archive \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGN_STYLE=Manual \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="jjinmakcha AppStore" \
-            DEVELOPMENT_TEAM=FTDP62ZD44
+            -destination 'generic/platform=iOS'
 
       - name: Export and upload to TestFlight
         env:
