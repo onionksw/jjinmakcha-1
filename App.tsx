@@ -260,12 +260,6 @@ const App: React.FC = () => {
   const [placeCategory, setPlaceCategory] = useState<PlaceCategory>('ALL');
   const [placeSort, setPlaceSort] = useState<PlaceSort>('RECOMMEND');
   
-  // PWA 설치 배너 State
-  const [installPrompt, setInstallPrompt] = useState<any>(null);
-  const [showInstallBanner, setShowInstallBanner] = useState(false);
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
-    || (window.navigator as any).standalone === true;
 
   // Auth State
   const [isLoggedIn, setIsLoggedIn] = useState(true);
@@ -331,17 +325,6 @@ const App: React.FC = () => {
     }
   }, [filterModalType]);
 
-  // PWA 설치 프롬프트 캡처
-  useEffect(() => {
-    if (isInStandaloneMode) return; // 이미 설치된 경우 무시
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPrompt(e);
-    };
-    window.addEventListener('beforeinstallprompt', handler);
-    return () => window.removeEventListener('beforeinstallprompt', handler);
-  }, [isInStandaloneMode]);
-
   // Splash Screen Effect + 방문자 트래킹
   useEffect(() => {
     setSplashMessage(SPLASH_MESSAGES[Math.floor(Math.random() * SPLASH_MESSAGES.length)]);
@@ -374,14 +357,10 @@ const App: React.FC = () => {
 
     const timer = setTimeout(() => {
       setShowSplash(false);
-      // 스플래시 끝난 후 설치 배너 표시 (이미 설치됐거나 dismissed면 skip)
-      if (!isInStandaloneMode && !sessionStorage.getItem('installBannerDismissed')) {
-        setTimeout(() => setShowInstallBanner(true), 1500);
-      }
     }, 2500);
 
     return () => clearTimeout(timer);
-  }, [isInStandaloneMode]);
+  }, []);
 
   // 실제 Supabase 로그인 상태 동기화 — 카카오 로그인 완료(리다이렉트 복귀 포함) 시
   // 여기서 실계정 정보를 반영함. 익명 세션만 있을 때는 손대지 않음(베타 임시 로그인 기본값 유지).
@@ -3344,21 +3323,6 @@ const App: React.FC = () => {
     );
   };
 
-  const handleInstall = async () => {
-    if (installPrompt) {
-      installPrompt.prompt();
-      await installPrompt.userChoice;
-      setInstallPrompt(null);
-    }
-    setShowInstallBanner(false);
-    sessionStorage.setItem('installBannerDismissed', '1');
-  };
-
-  const dismissInstallBanner = () => {
-    setShowInstallBanner(false);
-    sessionStorage.setItem('installBannerDismissed', '1');
-  };
-
   const renderContent = () => {
       // Priority Check for Open Now Tab content
       if (activeTab === 'OPEN_NOW') return renderOpenNow();
@@ -3529,33 +3493,6 @@ const App: React.FC = () => {
            </div>
        )}
 
-       {/* PWA 설치 배너 */}
-       {showInstallBanner && (
-         <div className="absolute bottom-0 left-0 right-0 z-[85] p-4 animate-in slide-in-from-bottom-4 duration-300">
-           <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-4 flex items-center gap-3">
-             <img src="/icons/icon-512.png" alt="찐막차" className="w-12 h-12 rounded-xl shrink-0 shadow-md shadow-blue-200" />
-             <div className="flex-1 min-w-0">
-               <p className="font-black text-gray-800 text-sm">앱으로 더 편하게!</p>
-               {isIOS ? (
-                 <p className="text-xs text-gray-400 leading-tight mt-0.5">Safari 하단 공유버튼 → 홈 화면에 추가</p>
-               ) : (
-                 <p className="text-xs text-gray-400 leading-tight mt-0.5">홈 화면에 추가하고 앱처럼 사용해보세요</p>
-               )}
-             </div>
-             {!isIOS && installPrompt && (
-               <button
-                 onClick={handleInstall}
-                 className="shrink-0 bg-brandBlue text-white text-xs font-black px-3 py-2 rounded-xl"
-               >
-                 설치
-               </button>
-             )}
-             <button onClick={dismissInstallBanner} className="shrink-0 text-gray-300 hover:text-gray-500 p-1">
-               <X size={18} />
-             </button>
-           </div>
-         </div>
-       )}
 
        {/* 절약금액 기록 토스트 */}
        {savingsToast && (
