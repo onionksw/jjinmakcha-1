@@ -1,6 +1,6 @@
 import { HybridRoute, RouteSegment } from '../types';
 import { getCoordinates, getDrivingDistance, getDrivingRoutePath, getWalkingRoute, getWalkingRoutePath, isOutsideSeoul } from './tmapService';
-import { isPathRunnable } from './transitScheduleService';
+import { isSubPathRunnable } from './transitScheduleService';
 import { API_BASE } from './apiBase';
 
 type HybridStrategy = 'time-saving' | 'cost-saving' | 'balanced';
@@ -528,7 +528,10 @@ async function buildTypedRoute(
   const baseSegments = await buildSegments(path, baseMs);
 
   // ── 경로당 택시 1회: 도보 대체 or 환승 지점 택시 ────────────────────────
-  const walkTaxiIdx = selectWalkTaxiIndex(baseSegments, strategy, walkThreshold, timeMode, baseMs);
+  // 시각 지정 검색에서 막차 끊김으로 잘려나간 경로(_scheduleTruncated)는 뒷부분에
+  // 목적지로 이어지는 구간이 아예 없으므로, 중간 도보만 택시로 바꾸는 Case A를 타면
+  // 목적지에 도달 못 한 채 경로가 끝남 — 반드시 Case B(환승 지점→목적지 택시)로 보냄
+  const walkTaxiIdx = path._scheduleTruncated ? null : selectWalkTaxiIndex(baseSegments, strategy, walkThreshold, timeMode, baseMs);
 
   let hybridSegments: RouteSegment[];
   let taxiCostTotal  = 0;
@@ -580,7 +583,33 @@ async function buildTypedRoute(
   } else {
     // ── Case B: 도보 대체 후보 없음 → 환승 지점에서 목적지까지 택시 ───────
     isTransferMode = true;
-    const tp = selectTransferPoint(path, endLat, endLng, strategy, timeMode, baseMs);
+    let tp = selectTransferPoint(path, endLat, endLng, strategy, timeMode, baseMs);
+
+    // 시각 지정 검색에서 막차 끊김으로 잘린 경로는 목적지까지 반드시 택시로 이어야
+    // 하므로, "1.5km 미만이면 그냥 걷는 게 낫다"는 selectTransferPoint의 일반 기준으로
+    // 후보가 하나도 안 나오더라도(마지막 하차 지점이 목적지와 아주 가까운 경우) 예외적으로
+    // 마지막 대중교통 구간에서 택시로 강제 연결 — 그래야 경로가 목적지에 실제로 도달함
+    if (!tp && path._scheduleTruncated) {
+      const subPaths: any[] = path.subPath || [];
+      for (let i = subPaths.length - 1; i >= 0; i--) {
+        const sub = subPaths[i];
+        if (toSegmentType(sub.trafficType) === 'walk') continue;
+        const lat = Number(sub.endY || 0), lng = Number(sub.endX || 0);
+        if (!lat || !lng) continue;
+        tp = {
+          subPathIdx: i,
+          boardingName: sub.endName || '',
+          boardingLat: lat,
+          boardingLng: lng,
+          distKm: haversineKm(lat, lng, endLat, endLng),
+          taxiCost: 0,
+          taxiMin: 0,
+          timeSaved: 0,
+          score: 0,
+        };
+        break;
+      }
+    }
 
     if (tp) {
       // Tmap 실주행 거리로 택시비/시간 보정 (실패 시 직선거리 추정값 유지)
@@ -636,7 +665,12 @@ async function buildTypedRoute(
   }
 
   const hybridTotalCost = totalCost + taxiCostTotal;
-  const hybridDuration  = Math.max(1, totalDuration - timeSavedTotal);
+  // 막차 끊김으로 잘린 경로는 "원래 전체 경로 시간 - 절약된 시간" 공식의 기준이 되는
+  // info.totalTime 자체가 (버려진 뒷부분 때문에) 더 이상 의미가 없으므로, 실제로
+  // 화면에 보여줄 hybridSegments의 소요시간을 그대로 합산해 정확한 총 소요시간을 구함
+  const hybridDuration  = path._scheduleTruncated
+    ? Math.max(1, hybridSegments.reduce((s, seg) => s + seg.durationMinutes, 0))
+    : Math.max(1, totalDuration - timeSavedTotal);
   const timeValueScore  = calcTimeValueScore(timeSavedTotal, taxiCostTotal);
 
   const taxiJustification = (taxiCostTotal > 0 && taxiSeg)
@@ -934,8 +968,35 @@ export const getOdsayTransitRoutes = async (
       candidates.push(p);
     }
 
-    const runnableFlags = await Promise.all(candidates.map(p => isPathRunnable(p, departureDate)));
-    paths = candidates.filter((_, i) => runnableFlags[i]);
+    // 지정 시각에 완주 가능한지 구간별로 확인. 막차가 끊긴 지점이 있으면 그 경로
+    // 전체를 버리지 않고, 운행 가능한 구간까지만 남긴 뒤 나머지는 택시로 이어붙임
+    // (buildTypedRoute의 환승 지점 택시 로직(selectTransferPoint)이 그대로 재사용됨)
+    // — "완주 불가능하면 아무 경로도 안 보여줌"은 찐막차의 핵심 가치(하이브리드 귀가)에
+    // 어긋나므로, 대중교통으로 갈 수 있는 데까지 + 택시로 반드시 경로를 만들어낸다.
+    const truncated = await Promise.all(candidates.map(async (p) => {
+      const subPaths: any[] = p.subPath || [];
+      const flags = await Promise.all(subPaths.map(sp => isSubPathRunnable(sp, departureDate)));
+      const firstBad = flags.findIndex(f => !f);
+      if (firstBad === -1) return p; // 전 구간 운행 — 그대로 사용
+
+      let cut = firstBad;
+      while (cut > 0 && toSegmentType(subPaths[cut - 1].trafficType) === 'walk') cut--;
+      if (cut === 0) return null; // 첫 대중교통 구간부터 운행 안 함 — 이 후보는 포기
+
+      const keptSubPath = subPaths.slice(0, cut);
+      const keptTime = keptSubPath.reduce((s: number, sp: any) => s + (sp.sectionTime || 0), 0);
+      return {
+        ...p,
+        subPath: keptSubPath,
+        info: { ...p.info, totalTime: keptTime },
+        // 잘려나간 구간을 도보 대체(Case A)가 아니라 반드시 택시로 목적지까지
+        // 이어붙이도록(Case B) buildTypedRoute에 알려주는 표식 — 잘린 경로는 이미
+        // 목적지 도달용 뒷부분이 없으므로, 중간 환승 도보만 택시로 바꾸는 Case A가
+        // 걸리면 목적지에 닿지 못한 채로 경로가 끝나버림
+        _scheduleTruncated: true,
+      };
+    }));
+    paths = truncated.filter((p): p is any => p !== null);
   } else {
     paths = allPaths;
   }

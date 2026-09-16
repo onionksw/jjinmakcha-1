@@ -555,8 +555,9 @@ const App: React.FC = () => {
         const newWalkThreshold = pendingFilters.maxWalk < 99 ? pendingFilters.maxWalk : WALK_THRESHOLD_BY_PREFERENCE[walkPreference];
         const { routes: r, fullTaxiCost: c } = await getOdsayTransitRoutes(startLoc, endLoc, depDate, newWalkThreshold, pendingFilters.excludeTaxi);
         if (r.length > 0) { setRoutes(r); setFullTaxiCost(c); }
-        else { setError('해당 시각에 운행 중인 경로가 없습니다. 출발 시간을 변경해보세요.'); }
+        else { setRoutes([]); setError('해당 시각에 운행 중인 경로가 없습니다. 출발 시간을 변경해보세요.'); }
       } catch (e: any) {
+        setRoutes([]);
         setError(e?.message || '해당 시각에 운행 중인 경로가 없습니다. 심야버스(N버스) 또는 택시를 이용해보세요.');
       }
       finally { setIsRefetchingRoutes(false); }
@@ -2672,11 +2673,13 @@ const App: React.FC = () => {
                                 })}
                             </div>
 
-                            {/* 실시간 기반 출발 카운트다운 */}
+                            {/* 실시간 기반 출발 카운트다운 — 사용자가 특정 출발 시각으로 검색한
+                                경우(filterDepartureTime)는 실시간(지금) 정보 대신 그 시각 기준으로 */}
                             <RouteCardCountdown
                                 firstTransitSeg={firstTransitSeg}
                                 walkMinutes={firstWalkMinutes}
                                 routeIndex={index}
+                                isScheduled={!!filterDepartureTime}
                             />
                         </div>
 

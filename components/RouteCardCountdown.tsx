@@ -7,6 +7,10 @@ interface Props {
   firstTransitSeg: RouteSegment | undefined;
   walkMinutes: number;
   routeIndex: number;
+  // 사용자가 "지금"이 아닌 특정 출발 시각을 지정해서 검색한 경우 — 이때는 실시간
+  // 지하철 도착정보(현재 시각 기준)를 보여주면 안 되고, 검색 시각 기준 예정 시각으로
+  // 카운트다운해야 함
+  isScheduled?: boolean;
 }
 
 // "HH:MM" 예정 시각을 오늘/내일 기준 타임스탬프로 변환 (자정 넘어가는 심야 경로 대응)
@@ -25,20 +29,21 @@ function getComment(leaveInMins: number, routeIndex: number): string {
   if (leaveInMins <= 0) return '놓치겠다! 뛰어!! 🏃‍♂️';
   if (leaveInMins < 20) return '편의점도 못 들려! 서둘러! 💦';
   if (leaveInMins < 40) return '아쉬운데 한 잔만 더? 🍺';
-  if (leaveInMins < 60) return '노래방 막곡 가능! 🎤';
+  if (leaveInMins < 60) return '코노 들렸다 갈까?! 🎤';
   if (leaveInMins < 90) return '천천히 마셔도 됨 🐢';
-  return '해장국 먹고 가도 되겠는데? 🍲';
+  if (leaveInMins < 100) return '해장국 먹고 가도 되겠는데? 🍲';
+  return '지금은 막차 시간 잊고 일단 마셔~ 🍻';
 }
 
-const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, routeIndex }) => {
+const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, routeIndex, isScheduled }) => {
   const [nextTransitMs, setNextTransitMs] = useState<number | null>(null);
   const [trainArrivalTime, setTrainArrivalTime] = useState<string | null>(null); // "HH:MM"
   const [trainMinutesLeft, setTrainMinutesLeft] = useState<number | null>(null); // 열차까지 남은 분
-  const [loading, setLoading] = useState(firstTransitSeg?.type === 'subway');
+  const [loading, setLoading] = useState(firstTransitSeg?.type === 'subway' && !isScheduled);
   const [, setTick] = useState(0);
 
   const fetchRealtime = useCallback(async () => {
-    if (firstTransitSeg?.type !== 'subway' || !firstTransitSeg.startName) return;
+    if (isScheduled || firstTransitSeg?.type !== 'subway' || !firstTransitSeg.startName) return;
     const clean = firstTransitSeg.startName.replace(/역$/, '').trim();
     const dir = resolveSubwayDirection(firstTransitSeg.lineName, firstTransitSeg.wayCode);
     const sid = lineNameToSubwayId(firstTransitSeg.lineName || '') || undefined;
@@ -52,7 +57,7 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
       setTrainMinutesLeft(catchable.minutesLeft);
     }
     setLoading(false);
-  }, [firstTransitSeg?.type, firstTransitSeg?.startName, firstTransitSeg?.nextStationName, walkMinutes]);
+  }, [isScheduled, firstTransitSeg?.type, firstTransitSeg?.startName, firstTransitSeg?.nextStationName, walkMinutes]);
 
   useEffect(() => {
     fetchRealtime();
@@ -75,12 +80,15 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
   const isSubway = firstTransitSeg?.type === 'subway';
   const isBus = firstTransitSeg?.type === 'bus';
 
-  // ─── 버스·택시 첫 탑승: 실시간 트래킹 대신, 경로 계산 시 산출된 예정
-  // 탑승 시각(departureTime)을 기준으로 카운트다운 ──────────────────────
-  if (!isSubway) {
-    const transitIcon = isBus ? '🚌' : firstTransitSeg?.type === 'taxi' ? '🚕' : '🚶';
-    const transitName = isBus ? (firstTransitSeg?.lineName || '버스') : firstTransitSeg?.type === 'taxi' ? '택시' : '도보';
-    const stopLabel = isBus ? '정류장까지 도보' : '목적지까지 도보';
+  // ─── 버스·택시·(시각 지정 검색 시) 지하철 첫 탑승: 실시간 트래킹 대신, 경로
+  // 계산 시 산출된 예정 탑승 시각(departureTime)을 기준으로 카운트다운 ───────
+  // 지하철은 원래 실시간 도착정보(현재 시각 기준)를 쓰지만, 사용자가 "지금"이
+  // 아닌 특정 시각으로 검색한 경우(isScheduled) 그 실시간 정보는 지금 시각
+  // 기준이라 검색한 시각과 무관해서 오히려 혼란만 주므로 여기서도 예정 시각 기준으로
+  if (!isSubway || isScheduled) {
+    const transitIcon = isSubway ? '🚇' : isBus ? '🚌' : firstTransitSeg?.type === 'taxi' ? '🚕' : '🚶';
+    const transitName = isSubway ? (firstTransitSeg?.lineName || '지하철') : isBus ? (firstTransitSeg?.lineName || '버스') : firstTransitSeg?.type === 'taxi' ? '택시' : '도보';
+    const stopLabel = (isSubway || isBus) ? (isSubway ? '역까지 도보' : '정류장까지 도보') : '목적지까지 도보';
 
     const scheduledTarget = firstTransitSeg?.departureTime ? parseScheduledTime(firstTransitSeg.departureTime) : null;
     const schedLeaveInMs = scheduledTarget !== null ? scheduledTarget - Date.now() - walkMinutes * 60000 : null;
