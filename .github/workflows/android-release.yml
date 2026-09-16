@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '22'
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -48,7 +48,9 @@ jobs:
 
       - name: Build signed release AAB
         working-directory: android
-        run: ./gradlew bundleRelease
+        run: |
+          chmod +x ./gradlew
+          ./gradlew bundleRelease
 
       - name: Clean up keystore
         if: always()
