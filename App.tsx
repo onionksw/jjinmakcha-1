@@ -252,6 +252,8 @@ const App: React.FC = () => {
   const [isNotiModalOpen, setIsNotiModalOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
+  const [showCustomMinuteInput, setShowCustomMinuteInput] = useState(false);
+  const [customMinuteInput, setCustomMinuteInput] = useState('');
 
   // Open Now / Places State
   const [nearbyPlaces, setNearbyPlaces] = useState<Place[]>([]);
@@ -685,13 +687,13 @@ const App: React.FC = () => {
   const handleOpenNotificationModal = (e: React.MouseEvent, routeId: string) => {
       e.stopPropagation(); // Prevent route selection
       setActiveRouteId(routeId);
+      setShowCustomMinuteInput(false);
+      setCustomMinuteInput('');
       setIsNotiModalOpen(true);
   };
 
-  const handleSetNotification = async (minutes: number | string) => {
+  const handleSetNotification = async (minutes: number) => {
       setIsNotiModalOpen(false);
-
-      if (typeof minutes === 'string') return;
 
       const route = routes.find(r => r.id === activeRouteId);
       if (!route) {
@@ -2762,7 +2764,7 @@ const App: React.FC = () => {
                     
                     <div className="grid grid-cols-3 gap-3 mb-4">
                         {[5, 10, 15, 30, 60].map(min => (
-                            <button 
+                            <button
                                 key={min}
                                 onClick={() => handleSetNotification(min)}
                                 className="py-4 rounded-2xl bg-blue-50 text-brandBlue font-black hover:bg-brandBlue hover:text-white transition-all text-lg active:scale-95"
@@ -2770,13 +2772,41 @@ const App: React.FC = () => {
                                 {min === 60 ? '1시간' : `${min}분`}
                             </button>
                         ))}
-                        <button 
-                            className="py-4 rounded-2xl bg-gray-100 text-gray-500 font-black hover:bg-gray-200 transition-all text-lg active:scale-95"
-                             onClick={() => handleSetNotification('직접 설정')}
+                        <button
+                            className={`py-4 rounded-2xl font-black transition-all text-lg active:scale-95 ${showCustomMinuteInput ? 'bg-brandBlue text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                             onClick={() => setShowCustomMinuteInput(true)}
                         >
                             직접설정
                         </button>
                     </div>
+                    {showCustomMinuteInput && (
+                        <div className="flex items-center gap-2 mb-4">
+                            <input
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                max={999}
+                                autoFocus
+                                value={customMinuteInput}
+                                onChange={(e) => setCustomMinuteInput(e.target.value)}
+                                placeholder="몇 분 전?"
+                                className="flex-1 min-w-0 px-4 py-3 rounded-2xl bg-gray-100 text-gray-800 font-black text-lg outline-none focus:ring-2 focus:ring-brandBlue"
+                            />
+                            <button
+                                onClick={() => {
+                                    const parsed = parseInt(customMinuteInput, 10);
+                                    if (!Number.isFinite(parsed) || parsed <= 0) {
+                                        alert('1분 이상의 숫자를 입력해주세요.');
+                                        return;
+                                    }
+                                    handleSetNotification(parsed);
+                                }}
+                                className="shrink-0 px-5 py-3 rounded-2xl bg-brandBlue text-white font-black text-lg active:scale-95"
+                            >
+                                설정
+                            </button>
+                        </div>
+                    )}
                     <div className="text-center">
                         <p className="text-xs text-brandPink font-bold bg-red-50 inline-block px-3 py-1 rounded-full">
                             ⚠️ 경로 출발 시간 기준 알림입니다.

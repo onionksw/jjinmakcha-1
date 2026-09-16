@@ -33,6 +33,11 @@ export const resolveSubwayDirection = (
 
 export const lineNameToSubwayId = (lineName: string): string | null => {
   const norm = lineName.replace(/\s/g, '').replace(/^서울|^수도권/, '');
+  // 인천교통공사 노선(인천1호선/인천2호선)은 "N호선" 표기가 서울 지하철과 겹쳐서
+  // (예: "인천1호선".includes('1호선')) 서울 1/9호선 ID로 잘못 매칭되던 버그.
+  // 인천 노선은 애초에 이 매핑(서울시 시간표·실시간 API 대상)에 없으므로 null 처리해서
+  // 시간대 기반 안전한 폴백(isSubPathRunnable)으로 넘어가게 함
+  if (norm.startsWith('인천')) return null;
   const match = LINE_NAME_TO_ID.find(([key]) => norm.includes(key) || key.includes(norm));
   return match ? match[1] : null;
 };
