@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
     const SEOUL_BUS_KEY = env.SEOUL_BUS_API_KEY || '';
     const ODSAY_KEY = env.ODSAY_API_KEY || '';
     const ODSAY_REFERER = env.ODSAY_REFERER || 'http://localhost:3000';
+    const TMAP_APP_KEY = env.TMAP_APP_KEY || '';
     const KAKAO_REST_KEY = env.KAKAO_REST_API_KEY || '';
     const NAVER_CLIENT_ID = env.NAVER_CLIENT_ID || '';
     const NAVER_CLIENT_SECRET = env.NAVER_CLIENT_SECRET || '';
@@ -221,9 +222,40 @@ export default defineConfig(({ mode }) => {
                             return;
                         }
 
-                        // ODsay 대중교통 경로 탐색 프록시
+                        // ODsay 대중교통 경로 탐색 프록시 (type=tmap-transit이면 TMAP 대중교통으로 분기)
                         if (url.startsWith('/api/odsay')) {
                             const params = new URLSearchParams(url.split('?')[1] || '');
+
+                            if (params.get('type') === 'tmap-transit') {
+                                if (!TMAP_APP_KEY) {
+                                    res.statusCode = 500;
+                                    res.setHeader('Content-Type', 'application/json');
+                                    res.end(JSON.stringify({ error: 'TMAP_APP_KEY 환경변수가 설정되지 않았습니다' }));
+                                    return;
+                                }
+                                try {
+                                    const r = await fetch('https://apis.openapi.sk.com/transit/routes', {
+                                        method: 'POST',
+                                        headers: { accept: 'application/json', appKey: TMAP_APP_KEY, 'content-type': 'application/json' },
+                                        body: JSON.stringify({
+                                            startX: params.get('startX') || '',
+                                            startY: params.get('startY') || '',
+                                            endX: params.get('endX') || '',
+                                            endY: params.get('endY') || '',
+                                            count: Number(params.get('count') || '10'),
+                                            ...(params.get('searchDttm') ? { searchDttm: params.get('searchDttm') } : {}),
+                                        }),
+                                    });
+                                    const data = await r.json();
+                                    res.setHeader('Content-Type', 'application/json');
+                                    res.end(JSON.stringify(data));
+                                } catch (e: any) {
+                                    res.setHeader('Content-Type', 'application/json');
+                                    res.end(JSON.stringify({ error: e.message }));
+                                }
+                                return;
+                            }
+
                             const SX = params.get('SX') || '';
                             const SY = params.get('SY') || '';
                             const EX = params.get('EX') || '';

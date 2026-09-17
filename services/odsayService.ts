@@ -210,6 +210,104 @@ async function fetchKakaoTransitPaths(
   return data.routes.map((route: any) => kakaoRouteToOdsayPath(route, startLat, startLon, endLat, endLon));
 }
 
+// ─── TMAP 대중교통 API — 시각 지정(searchDttm) 검색 전용 ───────────────────
+// 카카오/ODsay는 항상 "지금" 기준으로만 경로를 계산해서, 시각 지정 검색에는
+// 실측으로 검증됨(같은 경로를 새벽 3시로 조회하면 구간 21개 전부 service:0,
+// 지금 시각으로 조회하면 17개가 service:1로 나옴) — 구간별 실제 운행 여부
+// (service: 0=운행안함, 1=운행)가 응답에 직접 포함되어 있어, 이 시각 지정
+// 검색에서만 우선 사용하고 실패 시 기존 카카오+시간표 API 검증 방식으로 폴백함
+async function fetchTmapTransitItineraries(
+  startLat: number, startLon: number, endLat: number, endLon: number, departureDate: Date,
+): Promise<any[]> {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const searchDttm = `${departureDate.getFullYear()}${pad(departureDate.getMonth() + 1)}${pad(departureDate.getDate())}${pad(departureDate.getHours())}${pad(departureDate.getMinutes())}`;
+  const url = `${API_BASE}/api/odsay?type=tmap-transit&startX=${startLon}&startY=${startLat}&endX=${endLon}&endY=${endLat}&searchDttm=${searchDttm}&count=10`;
+  const res = await fetch(url);
+  const data = await res.json();
+  // TMAP 응답이 요청 파라미터 조합에 따라 plan을 최상위(data.plan)로 주기도 하고
+  // metaData 안(data.metaData.plan)에 중첩해서 주기도 함(실측으로 둘 다 확인됨) —
+  // 둘 다 확인해서 존재하는 쪽을 사용
+  const itineraries = data?.plan?.itineraries ?? data?.metaData?.plan?.itineraries;
+  if (!Array.isArray(itineraries) || itineraries.length === 0) {
+    throw new Error(`TMAP 대중교통 결과 없음: ${JSON.stringify(data).slice(0, 200)}`);
+  }
+  return itineraries;
+}
+
+const TMAP_MODE_TO_TRAFFIC_TYPE: Record<string, number> = { SUBWAY: 1, TRAIN: 1, BUS: 2, EXPRESSBUS: 2 };
+
+// "lon,lat lon,lat ..." 형태 폴리라인 문자열 → {lat,lng}[]
+function parseTmapLinestring(linestring: string | undefined): { lat: number; lng: number }[] {
+  if (!linestring) return [];
+  return linestring.trim().split(/\s+/).map(pair => {
+    const [lon, lat] = pair.split(',').map(Number);
+    return { lat, lng: lon };
+  }).filter(p => !Number.isNaN(p.lat) && !Number.isNaN(p.lng));
+}
+
+// TMAP 대중교통 itinerary → ODsay/카카오와 동일한 path.subPath 형태로 변환.
+// 각 구간(leg)의 service(0/1, 그 시각 실제 운행 여부)를 _tmapService로 같이
+// 붙여둬서, 뒤에서 별도 API 호출 없이 그대로 막차 끊김 판단에 사용함
+function tmapItineraryToOdsayPath(
+  itinerary: any, originLat: number, originLon: number, destLat: number, destLon: number,
+): any {
+  const legs: any[] = itinerary.legs || [];
+  // TMAP은 맨 처음/맨 끝 도보 구간의 지점명을 실제 지명 대신 "출발지"/"도착지"라는
+  // 자리표시자 문자열로 줘서, 그대로 쓰면 "출발지에서 강남까지 도보 이동"처럼 어색함
+  const cleanName = (name: string | undefined): string =>
+    (name === '출발지' || name === '도착지') ? '' : (name || '');
+
+  const subPath = legs.map((leg: any) => {
+    const trafficType = TMAP_MODE_TO_TRAFFIC_TYPE[leg.mode] ?? 3; // 1=지하철 2=버스 그외=도보
+    const stations = (leg.passStopList?.stations || []).map((s: any) => ({
+      stationName: s.stationName, x: s.lon, y: s.lat,
+    }));
+    return {
+      trafficType,
+      sectionTime: Math.round((leg.sectionTime || 0) / 60),
+      lane: leg.route ? [{ name: leg.route, busNo: leg.route }] : [],
+      startName: cleanName(leg.start?.name),
+      endName: cleanName(leg.end?.name),
+      startX: leg.start?.lon, startY: leg.start?.lat,
+      endX: leg.end?.lon, endY: leg.end?.lat,
+      passStopList: { stations },
+      _fullPath: leg.mode === 'WALK'
+        ? (leg.steps || []).flatMap((s: any) => parseTmapLinestring(s.linestring))
+        : parseTmapLinestring(leg.passShape?.linestring),
+      _tmapService: leg.mode === 'WALK' ? undefined : leg.service,
+    };
+  });
+
+  // 출발지 → 첫 승차 지점, 마지막 하차 지점 → 도착지 도보는 TMAP이 이미
+  // WALK leg로 포함해서 주므로(카카오와 달리) 별도 보정 불필요
+
+  return {
+    info: { totalTime: Math.round((itinerary.totalTime || 0) / 60), payment: itinerary.fare?.regular?.totalFare || 0, totalFare: itinerary.fare?.regular?.totalFare || 0 },
+    subPath,
+  };
+}
+
+// TMAP _tmapService 플래그로 막차 끊김 지점을 잘라냄 — 외부 API 재호출 없이
+// 동기적으로 처리 가능 (isSubPathRunnable의 TMAP 버전)
+function truncateByTmapService(path: any): any | null {
+  const subPaths: any[] = path.subPath || [];
+  const firstBad = subPaths.findIndex(sp => toSegmentType(sp.trafficType) !== 'walk' && sp._tmapService === 0);
+  if (firstBad === -1) return path; // 전 구간 운행 — 그대로 사용
+
+  let cut = firstBad;
+  while (cut > 0 && toSegmentType(subPaths[cut - 1].trafficType) === 'walk') cut--;
+  if (cut === 0) return null; // 첫 구간부터 운행 안 함 — 포기
+
+  const keptSubPath = subPaths.slice(0, cut);
+  const keptTime = keptSubPath.reduce((s: number, sp: any) => s + (sp.sectionTime || 0), 0);
+  return {
+    ...path,
+    subPath: keptSubPath,
+    info: { ...path.info, totalTime: keptTime },
+    _scheduleTruncated: true,
+  };
+}
+
 // 사용자 미설정 기본 도보 임계값
 const DEFAULT_WALK_THRESHOLD = 20;
 // 택시 탑승 최소 도보 시간 (이하면 절대 택시 대체 안 함)
@@ -966,6 +1064,25 @@ export const getOdsayTransitRoutes = async (
 
   let paths: any[];
   if (departureDate) {
+    // TMAP 대중교통 API(searchDttm)로 그 시각 기준 실제 운행 여부(service)가 반영된
+    // 경로를 먼저 시도 — 성공하면 아래 카카오+시간표API 검증 폴백은 건너뜀
+    let tmapPaths: any[] | null = null;
+    try {
+      const itineraries = await fetchTmapTransitItineraries(
+        startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon, departureDate,
+      );
+      tmapPaths = itineraries
+        .map(it => tmapItineraryToOdsayPath(it, startCoords.lat, startCoords.lon, endCoords.lat, endCoords.lon))
+        .filter(p => (p.info?.totalTime ?? 9999) <= 240)
+        .map(truncateByTmapService)
+        .filter((p): p is any => p !== null);
+    } catch {
+      tmapPaths = null; // 아래 카카오+시간표API 폴백으로
+    }
+
+    if (tmapPaths && tmapPaths.length > 0) {
+      paths = tmapPaths;
+    } else {
     const eligible = allPaths.filter(p => {
       const totalTime: number = p.info?.totalTime ?? 9999;
       if (totalTime > 240) return false;
@@ -1017,6 +1134,7 @@ export const getOdsayTransitRoutes = async (
       };
     }));
     paths = truncated.filter((p): p is any => p !== null);
+    }
   } else {
     paths = allPaths;
   }
