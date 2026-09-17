@@ -3,7 +3,7 @@ import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, 
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, supabase } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, setupNativeAuthDeepLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel, getUsageHistory, UsageHistoryItem } from './services/savingsService';
 import { registerForPush, addForegroundNotificationListener } from './services/pushService';
@@ -368,6 +368,9 @@ const App: React.FC = () => {
   // 여기서 실계정 정보를 반영함. 익명 세션만 있을 때는 손대지 않음(베타 임시 로그인 기본값 유지).
   useEffect(() => {
     if (!supabase) return;
+    // 네이티브 앱에서 소셜 로그인 완료 후 커스텀 스킴으로 돌아왔을 때 세션을 반영하는
+    // 리스너 — 앱 시작 시 한 번만 등록하면 됨(웹에서는 내부적으로 아무 동작 안 함)
+    setupNativeAuthDeepLink();
     // 소셜 로그인이 "이미 다른 계정에 연결된 프로바이더"로 실패했다면(재로그인 케이스)
     // 그 기존 계정으로 로그인 재시도 — 실패해도 세션이 조용히 익명으로 남는 문제를 해결
     resolvePendingSocialLink();
@@ -375,6 +378,11 @@ const App: React.FC = () => {
       const user = session?.user;
       if (user && !user.is_anonymous) {
         setIsLoggedIn(true);
+        // 웹에서는 로그인 후 리다이렉트로 페이지가 새로고침되면서 이 모달들도 같이
+        // 사라지는데, 네이티브 앱은 새로고침이 없어서 로그인이 실제로 끝난 뒤에도
+        // 로그인 유도 팝업/로그인 화면이 남아있던 문제 — 로그인 성공 시 직접 닫아줌
+        setShowLoginPrompt(false);
+        setShowLoginOverlay(false);
         const identity = user.app_metadata?.provider as string | undefined;
         const providerNames: Record<string, string> = { kakao: '카카오', google: '구글', naver: '네이버', apple: '애플', 'custom:naver': '네이버' };
         setLoginProvider(identity ? (providerNames[identity] ?? identity) : '');
@@ -703,11 +711,16 @@ const App: React.FC = () => {
 
       // route.departureTime은 "검색을 실행한 시각"일 뿐 실제 탑승 시각이 아님(항상 지금
       // 시각으로 채워짐) — 지하철은 RouteCardCountdown과 동일하게 실시간 도착정보로,
-      // 그 외(버스 등)는 해당 구간의 실제 예정 시각(firstTransitSeg.departureTime)으로 계산
+      // 그 외(버스 등)는 해당 구간의 실제 예정 시각(firstTransitSeg.departureTime)으로 계산.
+      // 단, 사용자가 필터에서 특정 출발 시각을 지정한 경우(filterDepartureTime)엔 실시간
+      // 조회가 "지금" 기준이라 검색한 시각과 무관해서 오히려 틀린 값이 나오므로(실제로
+      // 15:30 출발로 검색했는데 지금 당장 오는 열차를 기준 삼아 "이미 막차 5분 이내"라고
+      // 잘못 판단한 버그로 확인됨) 이때도 예정 시각 기준으로 계산
+      const isScheduledSearch = !!filterDepartureTime;
       const firstTransitSeg = route.segments.find(s => s.type !== 'walk');
       let departureMs: number | null = null;
 
-      if (firstTransitSeg?.type === 'subway' && firstTransitSeg.startName) {
+      if (!isScheduledSearch && firstTransitSeg?.type === 'subway' && firstTransitSeg.startName) {
           const clean = firstTransitSeg.startName.replace(/역$/, '').trim();
           const dir = resolveSubwayDirection(firstTransitSeg.lineName, firstTransitSeg.wayCode);
           const sid = lineNameToSubwayId(firstTransitSeg.lineName || '') || undefined;
@@ -2200,7 +2213,11 @@ const App: React.FC = () => {
             onClick={() => handleSocialLogin('kakao')}
             className="w-full flex items-center gap-3 bg-[#FEE500] rounded-2xl px-5 py-4 font-black text-gray-900 active:scale-[0.98] transition-all shadow-md shadow-yellow-100 hover:brightness-95"
           >
-            <div className="w-8 h-8 rounded-xl bg-black/10 flex items-center justify-center shrink-0 text-sm font-black">K</div>
+            <div className="w-8 h-8 flex items-center justify-center shrink-0">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none">
+                <path fill="#000000" d="M12 3C6.477 3 2 6.463 2 10.735c0 2.755 1.865 5.176 4.671 6.548-.206.767-1.323 4.94-1.365 5.264 0 0-.027.23.121.318a.437.437 0 0 0 .34.02c.446-.063 5.166-3.379 5.984-3.958.732.107 1.487.163 2.249.163 5.523 0 10-3.463 10-7.735C24 6.463 19.523 3 12 3"/>
+              </svg>
+            </div>
             <span className="flex-1 text-center text-[15px]">카카오로 시작하기</span>
           </button>
 
@@ -2234,7 +2251,11 @@ const App: React.FC = () => {
             onClick={() => handleSocialLogin('apple')}
             className="w-full flex items-center gap-3 bg-black rounded-2xl px-5 py-4 font-black text-white active:scale-[0.98] transition-all shadow-md hover:brightness-110"
           >
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-lg"></div>
+            <div className="w-8 h-8 flex items-center justify-center shrink-0">
+              <svg width="17" height="20" viewBox="0 0 384 512">
+                <path fill="#FFFFFF" d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/>
+              </svg>
+            </div>
             <span className="flex-1 text-center text-[15px]">Apple로 시작하기</span>
           </button>
         </div>
