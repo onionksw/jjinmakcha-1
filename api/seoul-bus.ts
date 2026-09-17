@@ -3,6 +3,90 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const BASE = 'http://ws.bus.go.kr/api/rest';
 const KEY = process.env.SEOUL_BUS_API_KEY || '';
 const ROUTE_KEY = process.env.SEOUL_BUS_ROUTE_API_KEY || KEY;
+// GBIS(경기)·인천버스는 data.go.kr 계정 단위 일반 인증키를 그대로 씀(TAGO와 동일 계정)
+const DATA_GO_KR_KEY = process.env.TAGO_API_KEY || '';
+
+interface RouteSchedule { found: true; busRouteId: string; firstBusTm: string; lastBusTm: string; routeType: string }
+
+// 서울 버스인지 노선번호로 조회 — 있으면 첫차/막차를 "HH:MM"으로 변환해 반환
+async function tryScheduleSeoul(routeNo: string): Promise<RouteSchedule | null> {
+  const data = await fetchJson(
+    `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${ROUTE_KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`
+  ).catch(() => null);
+  if (!data) return null;
+  const routes = toItems(data);
+  const candidates = routes.filter((r: any) => r.busRouteAbrv === routeNo || r.busRouteNm === routeNo);
+  const route = candidates[0] || routes[0];
+  if (!route) return null;
+  // 서울 API는 "yyyyMMddHHmmss" 형식으로 줌 — HH:MM만 추출
+  const toHHMM = (t: string) => (t && t.length >= 12) ? `${t.slice(8, 10)}:${t.slice(10, 12)}` : '';
+  return {
+    found: true,
+    busRouteId: route.busRouteId,
+    firstBusTm: toHHMM(route.firstBusTm || ''),
+    lastBusTm: toHHMM(route.lastBusTm || ''),
+    routeType: route.routeType || '',
+  };
+}
+
+// 경기도(GBIS) — 노선번호로 검색 후 상세 조회, 상/하행 중 더 이른 첫차·더 늦은 막차 사용
+async function tryScheduleGyeonggi(routeNo: string): Promise<RouteSchedule | null> {
+  try {
+    const listRes = await fetch(
+      `https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteListv2?serviceKey=${DATA_GO_KR_KEY}&keyword=${encodeURIComponent(routeNo)}&format=json&numOfRows=20&pageNo=1`
+    );
+    const listData = await listRes.json();
+    const rawList = listData?.response?.msgBody?.busRouteList;
+    const list = Array.isArray(rawList) ? rawList : (rawList ? [rawList] : []);
+    const match = list.find((r: any) => String(r.routeName) === routeNo) || list[0];
+    if (!match) return null;
+
+    const infoRes = await fetch(
+      `https://apis.data.go.kr/6410000/busrouteservice/v2/getBusRouteInfoItemv2?serviceKey=${DATA_GO_KR_KEY}&routeId=${match.routeId}&format=json`
+    );
+    const infoData = await infoRes.json();
+    const item = infoData?.response?.msgBody?.busRouteInfoItem;
+    if (!item) return null;
+
+    const firsts = [item.upFirstTime, item.downFirstTime].filter(Boolean).sort();
+    const lasts = [item.upLastTime, item.downLastTime].filter(Boolean).sort();
+    return {
+      found: true,
+      busRouteId: String(match.routeId),
+      firstBusTm: firsts[0] || '',
+      lastBusTm: lasts[lasts.length - 1] || '',
+      routeType: String(item.routeTypeCd ?? ''),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// 인천 — 노선번호로 직접 첫차/막차 조회(routeId 없이 바로 됨)
+async function tryScheduleIncheon(routeNo: string): Promise<RouteSchedule | null> {
+  try {
+    const r = await fetch(
+      `https://apis.data.go.kr/6280000/busRouteService/getBusRouteNo?routeNo=${encodeURIComponent(routeNo)}&numOfRows=10&pageNo=1&serviceKey=${DATA_GO_KR_KEY}`
+    );
+    const text = await r.text();
+    if (text.trimStart().startsWith('<')) return null; // XML 에러 응답
+    const data = JSON.parse(text);
+    const rawList = data?.ServiceResult?.msgBody?.itemList;
+    const list = Array.isArray(rawList) ? rawList : (rawList ? [rawList] : []);
+    const match = list.find((r: any) => r.ROUTENO === routeNo) || list[0];
+    if (!match) return null;
+    const toHHMM = (t: string) => (t && t.length === 4) ? `${t.slice(0, 2)}:${t.slice(2, 4)}` : '';
+    return {
+      found: true,
+      busRouteId: String(match.ROUTEID ?? ''),
+      firstBusTm: toHHMM(match.FBUS_DEPHMS || ''),
+      lastBusTm: toHHMM(match.LBUS_DEPHMS || ''),
+      routeType: String(match.ROUTETPCD ?? ''),
+    };
+  } catch {
+    return null;
+  }
+}
 
 // arrmsg1/2는 "2분31초후[1번째 전]" 형태 — 대괄호 안 숫자가 실제 남은 정류장 수.
 // traTime1/2는 도착까지 남은 '초' 단위 시간이라 정류장 수가 아님.
@@ -30,22 +114,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { stationName, routeNo, routeOnly } = req.query as Record<string, string>;
 
   // 정류소 없이 노선 자체의 첫차/막차 시각만 필요할 때 (시각 지정 경로 검증용)
+  // 서울 → 경기(GBIS) → 인천 순으로 시도, 먼저 찾은 결과 사용 (셋 다 같은 노선번호
+  // 체계를 공유하지 않아 지역을 미리 알 수 없으므로 순차 조회로 해결)
   if (routeOnly && routeNo) {
     try {
-      const routeData = await fetchJson(
-        `${BASE}/busRouteInfo/getBusRouteList?serviceKey=${ROUTE_KEY}&strSrch=${encodeURIComponent(routeNo)}&resultType=json`
-      );
-      const routes = toItems(routeData);
-      const candidates = routes.filter((r: any) => r.busRouteAbrv === routeNo || r.busRouteNm === routeNo);
-      const route = candidates[0] || routes[0];
-      if (!route) return res.json({ found: false });
-      return res.json({
-        found: true,
-        busRouteId: route.busRouteId,
-        firstBusTm: route.firstBusTm || '',
-        lastBusTm: route.lastBusTm || '',
-        routeType: route.routeType || '',
-      });
+      const found = await tryScheduleSeoul(routeNo)
+        ?? await tryScheduleGyeonggi(routeNo)
+        ?? await tryScheduleIncheon(routeNo);
+      return res.json(found ?? { found: false });
     } catch (e: any) {
       return res.json({ found: false, error: e.message });
     }

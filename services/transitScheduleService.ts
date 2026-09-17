@@ -66,15 +66,7 @@ const hhmmToServiceMin = (t: string): number | null => {
   if (Number.isNaN(h) || Number.isNaN(m)) return null;
   return toServiceMin(h, m);
 };
-// TAGO/서울버스 "yyyyMMddHHmmss" → 운행일 기준 분
-const tagoTmToServiceMin = (t: string): number | null => {
-  if (!t || t.length < 12) return null;
-  const h = Number(t.slice(8, 10)), m = Number(t.slice(10, 12));
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return toServiceMin(h, m);
-};
-
-// ─── 버스: 노선별 실제 첫차/막차 시각 (서울) ───────────────────────────────
+// ─── 버스: 노선별 실제 첫차/막차 시각 (서울 → 경기 → 인천 순으로 서버에서 조회) ──
 const busScheduleCache = new Map<string, { firstMin: number | null; lastMin: number | null; ts: number }>();
 
 async function fetchBusSchedule(busNo: string): Promise<{ firstMin: number | null; lastMin: number | null } | null> {
@@ -91,8 +83,8 @@ async function fetchBusSchedule(busNo: string): Promise<{ firstMin: number | nul
       return result;
     }
     const result = {
-      firstMin: tagoTmToServiceMin(data.firstBusTm),
-      lastMin: tagoTmToServiceMin(data.lastBusTm),
+      firstMin: hhmmToServiceMin(data.firstBusTm),
+      lastMin: hhmmToServiceMin(data.lastBusTm),
     };
     busScheduleCache.set(key, { ...result, ts: Date.now() });
     return result;
