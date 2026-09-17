@@ -80,12 +80,29 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
   const isSubway = firstTransitSeg?.type === 'subway';
   const isBus = firstTransitSeg?.type === 'bus';
 
-  // ─── 버스·택시·(시각 지정 검색 시) 지하철 첫 탑승: 실시간 트래킹 대신, 경로
-  // 계산 시 산출된 예정 탑승 시각(departureTime)을 기준으로 카운트다운 ───────
+  // ─── 실시간 조회 중 (지하철 · "지금" 검색일 때만) ───────────────────────
+  if (isSubway && !isScheduled && loading) {
+    return (
+      <div className="space-y-2">
+        <div className="rounded-2xl px-4 py-3 flex items-center gap-3 bg-gray-50">
+          <div className="w-4 h-4 border-2 border-gray-200 border-t-brandBlue rounded-full animate-spin shrink-0" />
+          <p className="text-xs text-gray-400 font-bold">실시간 열차 조회 중...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 실시간 조회는 끝났지만 데이터가 없는 경우(인천1·2호선 등 서울시 API 밖 노선처럼
+  // 커버리지가 없는 노선) — 빈 화면 대신, 경로 계산 시 산출된 예정 탑승 시각으로 대체
+  const noLiveSubwayData = isSubway && !isScheduled && !loading && leaveInMins === null;
+
+  // ─── 버스·택시·(시각 지정 검색 또는 실시간 데이터 없는) 지하철 첫 탑승: 실시간
+  // 트래킹 대신, 경로 계산 시 산출된 예정 탑승 시각(departureTime)을 기준으로
+  // 카운트다운 ─────────────────────────────────────────────────────────
   // 지하철은 원래 실시간 도착정보(현재 시각 기준)를 쓰지만, 사용자가 "지금"이
   // 아닌 특정 시각으로 검색한 경우(isScheduled) 그 실시간 정보는 지금 시각
   // 기준이라 검색한 시각과 무관해서 오히려 혼란만 주므로 여기서도 예정 시각 기준으로
-  if (!isSubway || isScheduled) {
+  if (!isSubway || isScheduled || noLiveSubwayData) {
     const transitIcon = isSubway ? '🚇' : isBus ? '🚌' : firstTransitSeg?.type === 'taxi' ? '🚕' : '🚶';
     const transitName = isSubway ? (firstTransitSeg?.lineName || '지하철') : isBus ? (firstTransitSeg?.lineName || '버스') : firstTransitSeg?.type === 'taxi' ? '택시' : '도보';
     const stopLabel = (isSubway || isBus) ? (isSubway ? '역까지 도보' : '정류장까지 도보') : '목적지까지 도보';
@@ -162,29 +179,9 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
     );
   }
 
-  // ─── 실시간 조회 중 ──────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="space-y-2">
-        <div className="rounded-2xl px-4 py-3 flex items-center gap-3 bg-gray-50">
-          <div className="w-4 h-4 border-2 border-gray-200 border-t-brandBlue rounded-full animate-spin shrink-0" />
-          <p className="text-xs text-gray-400 font-bold">실시간 열차 조회 중...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── 실시간 데이터 없음 (폴백) ───────────────────────────────────────
-  if (leaveInMins === null) {
-    return (
-      <div className="space-y-2">
-        <div className="rounded-2xl px-4 py-3 flex items-center gap-3 bg-gray-50">
-          <Clock className="w-4 h-4 shrink-0 text-gray-400" />
-          <p className="text-xs text-gray-400 font-bold">실시간 정보 없음 · 도보 {walkMinutes}분 소요</p>
-        </div>
-      </div>
-    );
-  }
+  // 여기부터는 지하철 + "지금" 검색 + 실시간 데이터 확보된 경우만 남음
+  // (로딩 중/데이터 없음은 위에서 이미 처리하고 반환됨 — 이 null 체크는 타입 좁히기용)
+  if (leaveInMins === null) return null;
 
   const urgent = leaveInMins <= 1;
   const comment = getComment(leaveInMins, routeIndex);

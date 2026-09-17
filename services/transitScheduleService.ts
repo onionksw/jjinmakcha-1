@@ -1,4 +1,3 @@
-import { lineNameToSubwayId } from './realtimeService';
 import { API_BASE } from './apiBase';
 
 /**
@@ -113,14 +112,14 @@ async function isBusRunnableAt(busNo: string, date: Date): Promise<boolean | nul
 // ─── 지하철: 역별 실제 첫차/막차 시각 ──────────────────────────────────────
 const subwayScheduleCache = new Map<string, { firstMin: number | null; lastMin: number | null; ts: number }>();
 
-async function fetchSubwayEdgeTimes(stationName: string, subwayId: string): Promise<{ firstMin: number | null; lastMin: number | null } | null> {
-  const key = `${subwayId}:${stationName}`;
+async function fetchSubwayEdgeTimes(stationName: string, lineName: string): Promise<{ firstMin: number | null; lastMin: number | null } | null> {
+  const key = `${lineName}:${stationName}`;
   const cached = subwayScheduleCache.get(key);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached;
 
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
-    const res = await fetch(`${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}`);
+    const res = await fetch(`${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&lineName=${encodeURIComponent(lineName)}`);
     const data = await res.json();
     // 방향(상/하행)을 구분하지 않고, 둘 중 하나라도 다니면 운행으로 간주 (허용적 폴백)
     const firsts = [data.firstTrain?.U, data.firstTrain?.D].filter(Boolean).map(hhmmToServiceMin).filter((v: number | null): v is number => v !== null);
@@ -141,10 +140,8 @@ async function isSubwayRunnableAt(sp: any, date: Date): Promise<boolean | null> 
   const lineName: string = sp.lane?.[0]?.name || '';
   const stationName: string = sp.startName || '';
   if (!lineName || !stationName) return null;
-  const subwayId = lineNameToSubwayId(lineName);
-  if (!subwayId) return null;
 
-  const sched = await fetchSubwayEdgeTimes(stationName, subwayId);
+  const sched = await fetchSubwayEdgeTimes(stationName, lineName);
   if (!sched || sched.firstMin === null || sched.lastMin === null) return null;
   const target = dateToServiceMin(date);
   return target >= sched.firstMin && target <= sched.lastMin;

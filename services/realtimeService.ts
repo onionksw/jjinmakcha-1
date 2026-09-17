@@ -49,18 +49,17 @@ export const getSubwayTimetable = async (
   lineName: string,
   wayCode?: number | null,
 ): Promise<SubwayArrival[]> => {
-  const subwayId = lineNameToSubwayId(lineName);
-  if (!subwayId) return [];
+  if (!lineName) return [];
 
   try {
     const clean = stationName.replace(/역$/, '').replace(/\(.*\)/, '').trim();
     // wayCode로 방향 고정: 1→U(상행), 2→D(하행), 없으면 둘 다 조회
     const dir = wayCode === 1 ? 'U' : wayCode === 2 ? 'D' : '';
-    const url = `${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&subwayId=${subwayId}${dir ? `&dir=${dir}` : ''}`;
+    const url = `${API_BASE}/api/subway-timetable?station=${encodeURIComponent(clean)}&lineName=${encodeURIComponent(lineName)}${dir ? `&dir=${dir}` : ''}`;
     const res = await fetch(url);
     const data = await res.json();
     if (!data.trains || data.trains.length === 0) {
-      console.warn('[시간표] 응답 없음:', { station: clean, subwayId, dir, data });
+      console.warn('[시간표] 응답 없음:', { station: clean, lineName, dir, data });
       return [];
     }
 
