@@ -771,6 +771,15 @@ function postProcessRoutes(routes: HybridRoute[]): HybridRoute[] {
   }
   if (unique.length === 0) return routes;
 
+  // 카드가 최소 2개는 뜨도록 보장 — 원래 후보가 2개 이상이었는데 전부 비슷해서
+  // 1개로 합쳐졌다면, 그나마 가장 다른(구분되는) 후보를 하나 더 채워 넣음
+  const minCount = Math.min(2, routes.length);
+  if (unique.length < minCount) {
+    const remaining = routes.filter(r => !unique.includes(r));
+    remaining.sort((a, b) => Math.abs(b.hybridTotalCost - unique[0].hybridTotalCost) - Math.abs(a.hybridTotalCost - unique[0].hybridTotalCost));
+    unique.push(...remaining.slice(0, minCount - unique.length));
+  }
+
   // 2. 실제 값 기준 최고 순위 경로 결정
   const byTime = [...unique].sort((a, b) => a.totalDuration - b.totalDuration);
   const byCost = [...unique].sort((a, b) => a.hybridTotalCost - b.hybridTotalCost);
@@ -864,9 +873,20 @@ function postProcessRoutes(routes: HybridRoute[]): HybridRoute[] {
 const MIN_TAXI_SAVINGS_RATIO = 0.3;
 function filterBySavingsRatio(routes: HybridRoute[]): HybridRoute[] {
   const qualifying = routes.filter(r => r.taxiCostOnly <= 0 || r.savedAmount / r.taxiCostOnly >= MIN_TAXI_SAVINGS_RATIO);
-  if (qualifying.length > 0 || routes.length === 0) return qualifying;
-  // 30% 기준을 넘는 경로가 하나도 없어도 완전히 빈 결과 대신 가장 저렴한 경로 하나는 보여줌
-  return [[...routes].sort((a, b) => a.hybridTotalCost - b.hybridTotalCost)[0]];
+  // 카드가 최소 2개는 뜨도록 보장 — 30% 기준을 넘는 경로가 부족하면 절약률 높은
+  // 순으로 모자란 만큼 채움 (완전히 빈 결과 대신 가장 저렴한 것 하나만 주던 기존
+  // 폴백보다 한 단계 더 관대하게)
+  const minCount = Math.min(2, routes.length);
+  if (qualifying.length >= minCount) return qualifying;
+  const bySavingsRatio = [...routes].sort((a, b) =>
+    (b.savedAmount / (b.taxiCostOnly || 1)) - (a.savedAmount / (a.taxiCostOnly || 1)),
+  );
+  const result = [...qualifying];
+  for (const r of bySavingsRatio) {
+    if (result.length >= minCount) break;
+    if (!result.includes(r)) result.push(r);
+  }
+  return result;
 }
 
 // ─── 공개 API ─────────────────────────────────────────────────────────────
