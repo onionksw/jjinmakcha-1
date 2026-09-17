@@ -20,17 +20,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'TMAP_APP_KEY 환경변수가 설정되지 않았습니다' });
     }
     const { startX, startY, endX, endY, searchDttm, count } = req.query as Record<string, string>;
+    const body = JSON.stringify({
+      startX, startY, endX, endY,
+      count: count ? Number(count) : 10,
+      ...(searchDttm ? { searchDttm } : {}),
+    });
     try {
       const r = await fetch('https://apis.openapi.sk.com/transit/routes', {
         method: 'POST',
         headers: { accept: 'application/json', appKey: TMAP_KEY, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          startX, startY, endX, endY,
-          count: count ? Number(count) : 10,
-          ...(searchDttm ? { searchDttm } : {}),
-        }),
+        body,
       });
       const data = await r.json();
+      if (data?.error) {
+        return res.status(500).json({ error: data.error, _debugSentBody: body, _debugKeyLen: TMAP_KEY.length, _debugStatus: r.status });
+      }
       return res.json(data);
     } catch (e: any) {
       return res.status(500).json({ error: e.message });
