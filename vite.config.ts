@@ -41,6 +41,15 @@ export default defineConfig(({ mode }) => {
         },
         plugins: [
             react(),
+            // iOS 네이티브 앱은 출처가 capacitor://localhost라 카카오맵 SDK가 등록 도메인이 아니라며
+            // 401(domain mismatched)로 거부함(콘솔에 등록해도 카카오가 "capacitor:"까지만 읽어 매칭 안 됨).
+            // Referer 헤더가 아예 없으면 통과하는 걸 확인해서, 네이티브 빌드에서만 Referer를 안 보내게 함
+            ...(isCapacitorBuild ? [{
+                name: 'native-no-referrer',
+                transformIndexHtml() {
+                    return [{ tag: 'meta', attrs: { name: 'referrer', content: 'no-referrer' }, injectTo: 'head-prepend' as const }];
+                },
+            }] : []),
             ...(isCapacitorBuild ? [] : [VitePWA({
                 registerType: 'autoUpdate',
                 includeAssets: ['icons/icon.svg'],

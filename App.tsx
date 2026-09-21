@@ -3396,7 +3396,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto h-screen bg-white text-gray-800 font-sans overflow-hidden shadow-2xl relative flex flex-col">
+    // 네이티브 iOS는 웹뷰가 상태바/홈 인디케이터 영역까지 채워서 상단 바 버튼이 시계·노치와
+    // 겹쳐 눌리기 어려웠음 — 안전 영역만큼 여백(웹/안드로이드는 0이라 영향 없음)
+    <div
+      className="max-w-md mx-auto h-screen bg-white text-gray-800 font-sans overflow-hidden shadow-2xl relative flex flex-col"
+      style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
        {/* 첫 사용자 온보딩 */}
        {showOnboarding && !showSplash && (
          <div className="absolute inset-0 z-[96] bg-black/50 backdrop-blur-sm flex items-end justify-center animate-in fade-in duration-200">
