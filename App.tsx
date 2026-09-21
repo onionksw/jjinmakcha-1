@@ -14,7 +14,7 @@ import CostChart from './components/CostChart';
 import RouteCardCountdown from './components/RouteCardCountdown';
 import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
-import TmapRouteView from './components/TmapRouteView';
+import RouteMap from './components/RouteMap';
 import PlaceSearchInput from './components/PlaceSearchInput';
 import { API_BASE } from './services/apiBase';
 
@@ -3092,7 +3092,7 @@ const App: React.FC = () => {
              
              {/* Map at the top of details, taking full width */}
              <div className="w-full relative shadow-inner z-0 border-b border-gray-100">
-                 <TmapRouteView route={selectedRoute} height="40vh" />
+                 <RouteMap route={selectedRoute} height="40vh" />
              </div>
 
              <div className="p-6">

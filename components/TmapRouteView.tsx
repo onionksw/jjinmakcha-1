@@ -108,12 +108,30 @@ async function fetchWalkPath(
   return [];
 }
 
+// 이 컴포넌트가 쓰는 위치 API만 뽑은 최소 형태 — iOS 앱의 지도 iframe 안에서는 위치를
+// 직접 못 받아서(RouteMap.tsx 참고) 앱 본체가 대신 받아 postMessage로 넘겨주는 어댑터를 주입함
+export interface GeoAdapter {
+  getCurrentPosition(
+    ok: (p: { coords: { latitude: number; longitude: number } }) => void,
+    err: (e: unknown) => void,
+    opts?: PositionOptions,
+  ): void;
+  watchPosition(
+    ok: (p: { coords: { latitude: number; longitude: number } }) => void,
+    err: (e: unknown) => void,
+    opts?: PositionOptions,
+  ): number;
+  clearWatch(id: number): void;
+}
+
 interface Props {
   route: HybridRoute;
   height?: string;
+  geo?: GeoAdapter;
 }
 
-const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
+const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
+  const getGeo = (): GeoAdapter => geo ?? navigator.geolocation;
   const mapRef    = useRef<HTMLDivElement>(null);
   const mapInst   = useRef<any>(null);
   const overlays  = useRef<any[]>([]);
@@ -125,7 +143,7 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
 
   const stopTracking = () => {
     if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current);
+      getGeo().clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
     setIsTracking(false);
@@ -360,7 +378,7 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
     if (!map) return;
 
     if (isTracking) {
-      navigator.geolocation.getCurrentPosition(
+      getGeo().getCurrentPosition(
         ({ coords: { latitude: lat, longitude: lng } }) => placeMyLocMarker(map, kakao, lat, lng, true),
         () => {},
         { enableHighAccuracy: true, timeout: 10000 },
@@ -369,7 +387,7 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
     }
 
     if (!myLocOverlay.current) {
-      navigator.geolocation.getCurrentPosition(
+      getGeo().getCurrentPosition(
         ({ coords: { latitude: lat, longitude: lng } }) => placeMyLocMarker(map, kakao, lat, lng, true),
         () => alert('위치 정보를 가져올 수 없습니다.'),
         { enableHighAccuracy: true, timeout: 10000 },
@@ -377,13 +395,13 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh' }) => {
       return;
     }
 
-    watchIdRef.current = navigator.geolocation.watchPosition(
+    watchIdRef.current = getGeo().watchPosition(
       ({ coords: { latitude: lat, longitude: lng } }) => placeMyLocMarker(map, kakao, lat, lng, true),
       () => {},
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 },
     );
     setIsTracking(true);
-  }, [isTracking]);
+  }, [isTracking, geo]);
 
   return (
     <div style={{ position: 'relative', width: '100%', height, overflow: 'hidden' }}>
