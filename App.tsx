@@ -344,7 +344,10 @@ const App: React.FC = () => {
 
     // 카카오톡 공유(Kakao.Share)용 JS SDK 초기화 — 지도용 kakao.maps와는 별개의 SDK/전역객체
     const Kakao = (window as any).Kakao;
-    if (Kakao && !Kakao.isInitialized()) {
+    // 키가 없으면 Kakao.init이 예외를 던지고, 이 effect 안에서 던져진 예외는 React 트리 전체를
+    // 언마운트시켜 앱이 흰 화면이 됨(실제로 CI 빌드에 키가 빠져서 iOS에서 발생) — 공유 기능만
+    // 못 쓰는 걸로 끝나도록 키가 있을 때만 초기화
+    if (Kakao && import.meta.env.VITE_KAKAO_JS_KEY && !Kakao.isInitialized()) {
       Kakao.init(import.meta.env.VITE_KAKAO_JS_KEY);
     }
 

@@ -30,6 +30,13 @@ jobs:
         run: npm ci
 
       - name: Build web assets (native mode) and sync iOS
+        # VITE_ 변수는 빌드 시점에 번들에 박히는 값이라, 로컬 .env.local(git 제외)이 없는
+        # CI에서는 여기서 넘겨줘야 함 — 안 넘기면 Kakao/Supabase가 초기화되지 않아 앱이 동작 안 함
+        env:
+          VITE_KAKAO_JS_KEY: ${{ secrets.VITE_KAKAO_JS_KEY }}
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_ADSENSE_CLIENT_ID: ${{ secrets.VITE_ADSENSE_CLIENT_ID }}
         run: npm run cap:sync
 
       - name: Import signing certificate and provisioning profile
