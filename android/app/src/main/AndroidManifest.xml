@@ -39,4 +39,9 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "현재 위치로 검색" 기능(navigator.geolocation)이 쓰는 권한. Capacitor의
+         BridgeWebChromeClient가 이미 런타임 권한 요청을 처리하지만, 매니페스트에
+         선언이 없으면 그 요청 자체가 항상 거부됨 -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 </manifest>
