@@ -1,10 +1,25 @@
 import path from 'path';
+import { execSync } from 'child_process';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Sentry에 에러가 "어느 배포에서" 났는지 같이 기록하기 위한 값. Vercel/GitHub Actions는
+// 커밋 해시를 환경변수로 자동으로 넣어주니 별도 시크릿 설정 없이 그대로 사용, 로컬 개발 중엔
+// git 명령으로 직접 구함(실패해도 빌드가 깨지면 안 되니 실패 시 'dev'로 폴백)
+function getAppRelease(): string {
+    if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA;
+    if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+    try {
+        return execSync('git rev-parse --short HEAD').toString().trim();
+    } catch {
+        return 'dev';
+    }
+}
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
+    const APP_RELEASE = getAppRelease();
     // Capacitor 네이티브 앱은 dist/를 그대로 번들링해서 로컬 파일로 실행하기 때문에
     // 오프라인 캐싱용 PWA 서비스워커가 필요 없고, 오히려 리빌드해도 캐시된 옛 파일을
     // 계속 보여주는 충돌을 일으킬 수 있어 네이티브 빌드에서는 아예 뺌.
@@ -525,6 +540,9 @@ export default defineConfig(({ mode }) => {
             alias: {
                 '@': path.resolve(__dirname, '.'),
             },
+        },
+        define: {
+            __APP_RELEASE__: JSON.stringify(APP_RELEASE),
         },
     };
 });
