@@ -34,6 +34,17 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- 귀가 중 카운트다운을 앱이 백그라운드에 있어도 상단 알림으로 보여주는 포그라운드 서비스.
+             위치/미디어 등 정해진 카테고리에 안 맞는 용도라 specialUse로 신고(안드로이드 14+ 필수) -->
+        <service
+            android:name=".CommuteForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="live_countdown_for_transit_departure" />
+        </service>
     </application>
 
     <!-- Permissions -->
@@ -44,4 +55,8 @@
          선언이 없으면 그 요청 자체가 항상 거부됨 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- 귀가 중 카운트다운 포그라운드 서비스용 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

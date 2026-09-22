@@ -8,12 +8,14 @@ import { findLatestDeparture } from './services/latestDepartureService';
 import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, setupNativeAuthDeepLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel, getUsageHistory, UsageHistoryItem } from './services/savingsService';
+import { createSharedRoute, getSharedRoute } from './services/sharedRouteService';
 import { registerForPush, addForegroundNotificationListener } from './services/pushService';
 import { createPushAlarm } from './services/alarmService';
 import { getSubwayArrivals, resolveSubwayDirection, lineNameToSubwayId } from './services/realtimeService';
 import { AppState, HybridRoute, LDTResult, Place, SharedRouteSnapshot } from './types';
 import CostChart from './components/CostChart';
-import RouteCardCountdown from './components/RouteCardCountdown';
+import RouteCardCountdown, { CommuteCountdownState } from './components/RouteCardCountdown';
+import { startCommuteNotification, updateCommuteNotification, stopCommuteNotification } from './services/commuteNotificationService';
 import DaumPostcode from 'react-daum-postcode';
 import RealTimeArrival from './components/RealTimeArrival';
 import RouteMap from './components/RouteMap';
@@ -314,6 +316,7 @@ const App: React.FC = () => {
   // 상단 고정 카운트다운은 실제로 귀가 중인 경로 기준을 유지해야 하므로 selectedRoute와 분리
   const [commutingRoute, setCommutingRoute] = useState<HybridRoute | null>(null);
   const [commutingCollapsed, setCommutingCollapsed] = useState(false);
+  const commuteNotifStarted = useRef(false);
   const [savingsToast, setSavingsToast] = useState<{ amount: number; duplicate: boolean } | null>(null);
 
   // 피커 모달 열릴 때 현재 선택값으로 스크롤
@@ -334,7 +337,18 @@ const App: React.FC = () => {
     setSplashMessage(SPLASH_MESSAGES[Math.floor(Math.random() * SPLASH_MESSAGES.length)]);
     track('visit');
 
-    // 카카오톡 공유 링크(?shared=...)로 들어온 경우 — 정적 경로 요약 화면으로 진입
+    // 짧은 공유 링크(/s/xxxxxxxxxx)로 들어온 경우 — 서버에서 조회해서 정적 경로 요약 화면으로 진입
+    const shortShareMatch = window.location.pathname.match(/^\/s\/([a-f0-9]+)$/);
+    if (shortShareMatch) {
+      getSharedRoute(shortShareMatch[1]).then(snap => {
+        if (snap) {
+          setSharedSnapshot(snap);
+          setAppState(AppState.SHARED_VIEW);
+        }
+      });
+    }
+
+    // 예전 방식(?shared=...로 경로 정보 전체를 URL에 직접 실음)으로 들어온 링크도 계속 지원
     const sharedParam = new URLSearchParams(window.location.search).get('shared');
     if (sharedParam) {
       const snap = decodeSharedRoute(sharedParam);
@@ -868,6 +882,10 @@ const App: React.FC = () => {
 
   const handleStartCommute = async () => {
       if (!selectedRoute) return;
+      // 백그라운드 알림(안드로이드 포그라운드 서비스)이 뜨려면 알림 권한이 필요한데,
+      // 지금까지는 "몇 분 후 알림받기"를 눌러야만 요청됐음 — 귀가하기를 눌러도
+      // 알림 권한을 안 물어봐서 권한이 없는 채로 조용히 실패하던 문제
+      registerForPush();
       const { logged } = await logSavings(startLoc, endLoc, selectedRoute.savedAmount);
       if (logged) {
           const updatedMonthly = await getMonthlySavings();
@@ -894,6 +912,53 @@ const App: React.FC = () => {
       setAppState(AppState.DETAILS);
   };
 
+  // 귀가 중 카운트다운을 앱이 백그라운드/잠금화면에 있어도(안드로이드) 상단 알림 카드로 계속
+  // 보여줌 — 실시간 지하철 폴링 등은 화면에 떠있는 RouteCardCountdown이 이미 하고 있어서
+  // 중복 구현하지 않고, 그 컴포넌트의 onUpdate 콜백으로 최종 계산 결과만 받아 알림에 반영함
+  useEffect(() => {
+      if (!isCommuting || !commutingRoute) {
+          if (commuteNotifStarted.current) {
+              stopCommuteNotification();
+              commuteNotifStarted.current = false;
+          }
+          return;
+      }
+      startCommuteNotification({
+          routeName: commutingRoute.name,
+          urgent: false,
+          leaveLabel: '경로 확인 중...',
+          comment: '',
+          transitValue: '',
+          departureClock: '--:--',
+          walkText: '',
+          countdownText: '',
+      });
+      commuteNotifStarted.current = true;
+  }, [isCommuting, commutingRoute]);
+
+  // RouteCardCountdown이 5초마다 갱신되는 걸 그대로 다 알림에 반영하면 너무 잦아서 15초로 스로틀
+  const lastCommuteNotifAt = useRef(0);
+  const handleCommuteCountdownUpdate = useCallback((state: CommuteCountdownState) => {
+      if (!commutingRoute) return;
+      const now = Date.now();
+      if (now - lastCommuteNotifAt.current < 15000) return;
+      lastCommuteNotifAt.current = now;
+      updateCommuteNotification({
+          routeName: commutingRoute.name,
+          urgent: state.urgent,
+          leaveLabel: state.leaveInMins === null
+              ? '경로 확인 중...'
+              : state.urgent ? '지금 출발!' : `출발까지 ${state.leaveInMins}분 남음`,
+          comment: state.comment,
+          transitValue: `${state.transitIcon} ${state.transitName}`,
+          departureClock: state.departureClock || '--:--',
+          walkText: state.walkMinutes > 0 ? `${state.walkMinutes}분` : '바로',
+          countdownText: state.leaveInMins !== null && state.leaveInMins <= 0
+              ? '지금 출발!'
+              : `${state.mins}분 ${String(state.secs).padStart(2, '0')}초`,
+      });
+  }, [commutingRoute]);
+
   const handleShareRoute = async () => {
       if (!selectedRoute) return;
       const [h, m] = selectedRoute.departureTime.split(':').map(Number);
@@ -912,7 +977,9 @@ const App: React.FC = () => {
       };
       // 네이티브 앱은 origin이 capacitor://localhost라 실제 웹사이트 주소로 고정해야 함
       const origin = Capacitor.isNativePlatform() ? 'https://jjinmakcha.com' : window.location.origin;
-      const shareUrl = `${origin}/?shared=${encodeSharedRoute(snapshot)}`;
+      // 짧은 링크로 서버에 저장 — 실패하면(네트워크 오류 등) 예전 방식(경로 전체를 URL에 직접 인코딩)으로 폴백
+      const sharedId = await createSharedRoute(snapshot);
+      const shareUrl = sharedId ? `${origin}/s/${sharedId}` : `${origin}/?shared=${encodeSharedRoute(snapshot)}`;
       const title = `${startLoc} → ${endLoc}, 찐막차로 ${selectedRoute.savedAmount.toLocaleString()}원 절약!`;
       const description = `${selectedRoute.totalDuration}분 · ${selectedRoute.hybridTotalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`;
 
@@ -1829,7 +1896,10 @@ const App: React.FC = () => {
 
         {/* 공지사항 상세 페이지 */}
         {showMyPageNotices && (
-            <div className="absolute inset-0 z-[60] bg-gray-50 flex flex-col animate-in slide-in-from-right-full duration-300">
+            <div
+                className="absolute inset-0 z-[60] bg-gray-50 flex flex-col animate-in slide-in-from-right-full duration-300"
+                style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
                 <header className="px-5 py-4 bg-white sticky top-0 z-20 shadow-sm flex items-center gap-2">
                     <button onClick={() => { setShowMyPageNotices(false); setSelectedNotice(null); }} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
                         <ChevronLeft size={24} />
@@ -1877,7 +1947,10 @@ const App: React.FC = () => {
 
         {/* 고객센터 상세 페이지 */}
         {showCustomerService && (
-            <div className="absolute inset-0 z-[60] bg-gray-50 flex flex-col animate-in slide-in-from-right-full duration-300">
+            <div
+                className="absolute inset-0 z-[60] bg-gray-50 flex flex-col animate-in slide-in-from-right-full duration-300"
+                style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
                 <header className="px-5 py-4 bg-white sticky top-0 z-20 shadow-sm flex items-center gap-2">
                     <button onClick={() => setShowCustomerService(false)} className="p-2 -ml-2 text-gray-500 hover:bg-gray-100 rounded-full transition-colors">
                         <ChevronLeft size={24} />
@@ -3473,7 +3546,10 @@ const App: React.FC = () => {
 
        {/* 내 정보 오버레이 — 실제 로그인(loginProvider)한 경우에만 진입 허용 */}
        {activeTab === 'MY_PAGE' && (
-           <div className="absolute inset-0 z-[80] animate-in slide-in-from-right-full duration-300">
+           <div
+               className="absolute inset-0 z-[80] animate-in slide-in-from-right-full duration-300"
+               style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+           >
                {loginProvider ? renderMyPage() : (
                    <div className="flex flex-col h-full bg-white">
                        <header className="px-5 py-4 flex items-center gap-2">
@@ -3511,7 +3587,10 @@ const App: React.FC = () => {
                    🏃
                </button>
            ) : (
-               <div className="absolute top-0 left-0 right-0 z-[82] p-3 animate-in slide-in-from-top-4 duration-300">
+               <div
+                   className="absolute top-0 left-0 right-0 z-[82] p-3 animate-in slide-in-from-top-4 duration-300"
+                   style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+               >
                    <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-3" onClick={handleReturnToCommute}>
                        <div className="flex items-center justify-between mb-2 px-1">
                            <span className="inline-flex items-center gap-1.5 bg-brandMint/10 text-brandMint text-[11px] font-black px-2.5 py-1 rounded-full">
@@ -3537,6 +3616,7 @@ const App: React.FC = () => {
                            firstTransitSeg={commutingRoute.segments.find(s => s.type !== 'walk')}
                            walkMinutes={commutingRoute.walkMinutes}
                            routeIndex={0}
+                           onUpdate={handleCommuteCountdownUpdate}
                        />
                    </div>
                </div>
@@ -3600,7 +3680,10 @@ const App: React.FC = () => {
 
        {/* 로그인 오버레이 */}
        {showLoginOverlay && (
-           <div className="absolute inset-0 z-[90] animate-in slide-in-from-bottom-full duration-300">
+           <div
+               className="absolute inset-0 z-[90] animate-in slide-in-from-bottom-full duration-300"
+               style={{ paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+           >
                <div className="h-full relative">
                    {renderLogin()}
                    <button

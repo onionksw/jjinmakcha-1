@@ -3,6 +3,22 @@ import { Clock } from 'lucide-react';
 import { getSubwayArrivals, resolveSubwayDirection, lineNameToSubwayId } from '../services/realtimeService';
 import { RouteSegment } from '../types';
 
+// 백그라운드 알림(안드로이드 CommuteForegroundService)에 그대로 실어 보낼 수 있게, 화면에
+// 보이는 카드가 최종적으로 뭘 그리는지를 그대로 반영한 상태값 — App.tsx가 이 콜백을 받아서
+// 네이티브 알림 내용을 갱신함(실시간 지하철 폴링 등 이 컴포넌트의 로직을 중복 구현하지 않기 위함)
+export interface CommuteCountdownState {
+  urgent: boolean;
+  comment: string;
+  leaveInMins: number | null;
+  mins: number;
+  secs: number;
+  transitIcon: string;
+  transitName: string;
+  departureClock: string | null; // "HH:MM" 형태, 없으면 null
+  walkMinutes: number;
+  stopLabel: string;
+}
+
 interface Props {
   firstTransitSeg: RouteSegment | undefined;
   walkMinutes: number;
@@ -11,10 +27,11 @@ interface Props {
   // 지하철 도착정보(현재 시각 기준)를 보여주면 안 되고, 검색 시각 기준 예정 시각으로
   // 카운트다운해야 함
   isScheduled?: boolean;
+  onUpdate?: (state: CommuteCountdownState) => void;
 }
 
 // "HH:MM" 예정 시각을 오늘/내일 기준 타임스탬프로 변환 (자정 넘어가는 심야 경로 대응)
-function parseScheduledTime(hhmm: string): number | null {
+export function parseScheduledTime(hhmm: string): number | null {
   const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
   const target = new Date();
@@ -35,7 +52,7 @@ function getComment(leaveInMins: number, routeIndex: number): string {
   return '지금은 막차 시간 잊고 일단 마셔~ 🍻';
 }
 
-const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, routeIndex, isScheduled }) => {
+const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, routeIndex, isScheduled, onUpdate }) => {
   const [nextTransitMs, setNextTransitMs] = useState<number | null>(null);
   const [trainArrivalTime, setTrainArrivalTime] = useState<string | null>(null); // "HH:MM"
   const [trainMinutesLeft, setTrainMinutesLeft] = useState<number | null>(null); // 열차까지 남은 분
@@ -70,15 +87,46 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
     return () => clearInterval(id);
   }, []);
 
-  // 출발까지 남은 시간 = 열차 도착 - 지금 - 도보 시간
+  // 출발까지 남은 시간 = 열차 도착 - 지금 - 도보 시간 (지하철 실시간 트래킹 기준)
   const leaveInMs = nextTransitMs !== null
     ? nextTransitMs - Date.now() - walkMinutes * 60000
     : null;
   const leaveInMins = leaveInMs !== null ? Math.round(leaveInMs / 60000) : null;
   const leaveInSecs = leaveInMs !== null ? Math.max(0, Math.floor(leaveInMs / 1000)) : null;
 
+  // 출발까지 남은 시간 (경로 계산 시 산출된 예정 탑승 시각 기준 — 버스/택시/시각지정검색 등)
+  const scheduledTarget = firstTransitSeg?.departureTime ? parseScheduledTime(firstTransitSeg.departureTime) : null;
+  const schedLeaveInMs = scheduledTarget !== null ? scheduledTarget - Date.now() - walkMinutes * 60000 : null;
+  const schedLeaveInMins = schedLeaveInMs !== null ? Math.round(schedLeaveInMs / 60000) : null;
+  const schedLeaveInSecs = schedLeaveInMs !== null ? Math.max(0, Math.floor(schedLeaveInMs / 1000)) : null;
+
   const isSubway = firstTransitSeg?.type === 'subway';
   const isBus = firstTransitSeg?.type === 'bus';
+
+  // 실시간 조회는 끝났지만 데이터가 없는 경우(인천1·2호선 등 서울시 API 밖 노선처럼
+  // 커버리지가 없는 노선) — 빈 화면 대신, 경로 계산 시 산출된 예정 탑승 시각으로 대체
+  const noLiveSubwayData = isSubway && !isScheduled && !loading && leaveInMins === null;
+  // 지하철은 원래 실시간 도착정보(현재 시각 기준)를 쓰지만, 사용자가 "지금"이 아닌 특정
+  // 시각으로 검색한 경우(isScheduled)나 실시간 커버리지가 없는 노선은 예정 시각 기준으로
+  const useScheduled = !isSubway || isScheduled || noLiveSubwayData;
+
+  const effMins = useScheduled ? schedLeaveInMins : leaveInMins;
+  const effSecs = useScheduled ? schedLeaveInSecs : leaveInSecs;
+  const urgent = effMins !== null && effMins <= 1;
+  const comment = getComment(effMins ?? 999, routeIndex);
+  const mins = effSecs !== null ? Math.floor(effSecs / 60) : 0;
+  const secs = effSecs !== null ? effSecs % 60 : 0;
+  const transitIcon = isSubway ? '🚇' : isBus ? '🚌' : firstTransitSeg?.type === 'taxi' ? '🚕' : '🚶';
+  const transitName = isSubway ? (firstTransitSeg?.lineName || '지하철') : isBus ? (firstTransitSeg?.lineName || '버스') : firstTransitSeg?.type === 'taxi' ? '택시' : '도보';
+  const stopLabel = (isSubway || isBus) ? (isSubway ? '역까지 도보' : '정류장까지 도보') : '목적지까지 도보';
+  const departureClock = useScheduled ? (firstTransitSeg?.departureTime || null) : trainArrivalTime;
+
+  // 백그라운드 알림용 콜백 — 실시간 열차 조회 중(아직 값이 없는 순간)에는 안 쏨
+  useEffect(() => {
+    if (!onUpdate || (isSubway && !isScheduled && loading)) return;
+    onUpdate({ urgent, comment, leaveInMins: effMins, mins, secs, transitIcon, transitName, departureClock, walkMinutes, stopLabel });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urgent, comment, effMins, mins, secs, transitIcon, transitName, departureClock, walkMinutes, stopLabel, onUpdate, isSubway, isScheduled, loading]);
 
   // ─── 실시간 조회 중 (지하철 · "지금" 검색일 때만) ───────────────────────
   if (isSubway && !isScheduled && loading) {
@@ -92,30 +140,10 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
     );
   }
 
-  // 실시간 조회는 끝났지만 데이터가 없는 경우(인천1·2호선 등 서울시 API 밖 노선처럼
-  // 커버리지가 없는 노선) — 빈 화면 대신, 경로 계산 시 산출된 예정 탑승 시각으로 대체
-  const noLiveSubwayData = isSubway && !isScheduled && !loading && leaveInMins === null;
-
   // ─── 버스·택시·(시각 지정 검색 또는 실시간 데이터 없는) 지하철 첫 탑승: 실시간
   // 트래킹 대신, 경로 계산 시 산출된 예정 탑승 시각(departureTime)을 기준으로
   // 카운트다운 ─────────────────────────────────────────────────────────
-  // 지하철은 원래 실시간 도착정보(현재 시각 기준)를 쓰지만, 사용자가 "지금"이
-  // 아닌 특정 시각으로 검색한 경우(isScheduled) 그 실시간 정보는 지금 시각
-  // 기준이라 검색한 시각과 무관해서 오히려 혼란만 주므로 여기서도 예정 시각 기준으로
-  if (!isSubway || isScheduled || noLiveSubwayData) {
-    const transitIcon = isSubway ? '🚇' : isBus ? '🚌' : firstTransitSeg?.type === 'taxi' ? '🚕' : '🚶';
-    const transitName = isSubway ? (firstTransitSeg?.lineName || '지하철') : isBus ? (firstTransitSeg?.lineName || '버스') : firstTransitSeg?.type === 'taxi' ? '택시' : '도보';
-    const stopLabel = (isSubway || isBus) ? (isSubway ? '역까지 도보' : '정류장까지 도보') : '목적지까지 도보';
-
-    const scheduledTarget = firstTransitSeg?.departureTime ? parseScheduledTime(firstTransitSeg.departureTime) : null;
-    const schedLeaveInMs = scheduledTarget !== null ? scheduledTarget - Date.now() - walkMinutes * 60000 : null;
-    const schedLeaveInMins = schedLeaveInMs !== null ? Math.round(schedLeaveInMs / 60000) : null;
-    const schedLeaveInSecs = schedLeaveInMs !== null ? Math.max(0, Math.floor(schedLeaveInMs / 1000)) : null;
-    const urgent = schedLeaveInMins !== null && schedLeaveInMins <= 1;
-    const comment = getComment(schedLeaveInMins ?? 999, routeIndex);
-    const mins = schedLeaveInSecs !== null ? Math.floor(schedLeaveInSecs / 60) : 0;
-    const secs = schedLeaveInSecs !== null ? schedLeaveInSecs % 60 : 0;
-
+  if (useScheduled) {
     return (
       <div className="space-y-0">
         {/* 긴박도 배너 */}
@@ -180,13 +208,7 @@ const RouteCardCountdown: React.FC<Props> = ({ firstTransitSeg, walkMinutes, rou
   }
 
   // 여기부터는 지하철 + "지금" 검색 + 실시간 데이터 확보된 경우만 남음
-  // (로딩 중/데이터 없음은 위에서 이미 처리하고 반환됨 — 이 null 체크는 타입 좁히기용)
   if (leaveInMins === null) return null;
-
-  const urgent = leaveInMins <= 1;
-  const comment = getComment(leaveInMins, routeIndex);
-  const mins = leaveInSecs !== null ? Math.floor(leaveInSecs / 60) : 0;
-  const secs = leaveInSecs !== null ? leaveInSecs % 60 : 0;
 
   return (
     <div className="space-y-0">

@@ -23,6 +23,7 @@
     "@sentry/react": "10.69.0",
     "@supabase/supabase-js": "^2.112.4",
     "@types/leaflet": "^1.9.21",
+    "@vercel/functions": "^3.9.9",
     "firebase": "^12.19.0",
     "jose": "^5.10.0",
     "leaflet": "^1.9.4",
