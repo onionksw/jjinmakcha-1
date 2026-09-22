@@ -11,5 +11,8 @@ project(':capacitor-app').projectDir = new File('../node_modules/@capacitor/app/
 include ':capacitor-browser'
 project(':capacitor-browser').projectDir = new File('../node_modules/@capacitor/browser/android')
 
+include ':capacitor-share'
+project(':capacitor-share').projectDir = new File('../node_modules/@capacitor/share/android')
+
 include ':sentry-capacitor'
 project(':sentry-capacitor').projectDir = new File('../node_modules/@sentry/capacitor/android')

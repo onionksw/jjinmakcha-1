@@ -1,5 +1,7 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2, Share2, ChevronDown } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
@@ -892,13 +894,8 @@ const App: React.FC = () => {
       setAppState(AppState.DETAILS);
   };
 
-  const handleShareRoute = () => {
+  const handleShareRoute = async () => {
       if (!selectedRoute) return;
-      const Kakao = (window as any).Kakao;
-      if (!Kakao || !Kakao.isInitialized()) {
-          alert('공유 기능을 불러오지 못했어요. 잠시 후 다시 시도해주세요 🙏');
-          return;
-      }
       const [h, m] = selectedRoute.departureTime.split(':').map(Number);
       const arrDate = new Date(0, 0, 0, h, m + selectedRoute.totalDuration);
       const arrivalTime = `${String(arrDate.getHours()).padStart(2, '0')}:${String(arrDate.getMinutes()).padStart(2, '0')}`;
@@ -913,14 +910,35 @@ const App: React.FC = () => {
           saved: selectedRoute.savedAmount,
           segs: selectedRoute.segments.map(seg => ({ t: seg.type, i: seg.instruction, d: seg.durationMinutes })),
       };
-      const shareUrl = `${window.location.origin}/?shared=${encodeSharedRoute(snapshot)}`;
+      // 네이티브 앱은 origin이 capacitor://localhost라 실제 웹사이트 주소로 고정해야 함
+      const origin = Capacitor.isNativePlatform() ? 'https://jjinmakcha.com' : window.location.origin;
+      const shareUrl = `${origin}/?shared=${encodeSharedRoute(snapshot)}`;
+      const title = `${startLoc} → ${endLoc}, 찐막차로 ${selectedRoute.savedAmount.toLocaleString()}원 절약!`;
+      const description = `${selectedRoute.totalDuration}분 · ${selectedRoute.hybridTotalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`;
 
+      // 카카오 JS SDK의 카카오톡 공유는 웹뷰 안에서 kakaolink:// 스킴으로 바로 넘어가려 하는데,
+      // 이게 로그인 때와 같은 이유로 네이티브 웹뷰 안에서는 불안정함(공유가 그냥 조용히 안 됨) —
+      // 네이티브 앱에서는 OS 기본 공유창(카카오톡/문자/에어드롭 등 선택 가능)을 대신 씀
+      if (Capacitor.isNativePlatform()) {
+          try {
+              await Share.share({ title, text: description, url: shareUrl, dialogTitle: '경로 공유하기' });
+          } catch {
+              // 사용자가 공유 시트를 취소한 경우도 여기로 오므로 별도 알림 없음
+          }
+          return;
+      }
+
+      const Kakao = (window as any).Kakao;
+      if (!Kakao || !Kakao.isInitialized()) {
+          alert('공유 기능을 불러오지 못했어요. 잠시 후 다시 시도해주세요 🙏');
+          return;
+      }
       Kakao.Share.sendDefault({
           objectType: 'feed',
           content: {
-              title: `${startLoc} → ${endLoc}, 찐막차로 ${selectedRoute.savedAmount.toLocaleString()}원 절약!`,
-              description: `${selectedRoute.totalDuration}분 · ${selectedRoute.hybridTotalCost.toLocaleString()}원 — 택시비 아껴서 3차 가자 🍻`,
-              imageUrl: `${window.location.origin}/icons/icon-512.png`,
+              title,
+              description,
+              imageUrl: `${origin}/icons/icon-512.png`,
               link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
           },
           buttons: [
