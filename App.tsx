@@ -921,7 +921,10 @@ const App: React.FC = () => {
       // 네이티브 앱에서는 OS 기본 공유창(카카오톡/문자/에어드롭 등 선택 가능)을 대신 씀
       if (Capacitor.isNativePlatform()) {
           try {
-              await Share.share({ title, text: description, url: shareUrl, dialogTitle: '경로 공유하기' });
+              // title/text를 같이 보내면 카카오톡이 "설명 문구 + URL"을 한 메시지로 합쳐서 보내는데,
+              // 이러면 메시지가 URL 단독이 아니라서 링크 미리보기 카드를 안 만들어줌(실기기로 확인).
+              // URL만 단독으로 보내면 카카오톡이 직접 크롤링해서 카드를 만듦 — 설명은 og:description으로 대신함
+              await Share.share({ url: shareUrl, dialogTitle: '경로 공유하기' });
           } catch {
               // 사용자가 공유 시트를 취소한 경우도 여기로 오므로 별도 알림 없음
           }
