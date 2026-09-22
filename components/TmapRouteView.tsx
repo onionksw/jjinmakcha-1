@@ -124,14 +124,70 @@ export interface GeoAdapter {
   clearWatch(id: number): void;
 }
 
+// 나침반 방향 — iOS는 iOS 13+부터 DeviceOrientationEvent.requestPermission()으로 사용자
+// 제스처 안에서 허가를 받아야 하고, iframe(EmbedMap.tsx)에서는 그 허가 자체가 불안정해서
+// 위치와 동일하게 iOS는 앱 본체(RouteMap.tsx)가 대신 구독해 postMessage로 넘겨줌
+export interface HeadingAdapter {
+  watchHeading(cb: (headingDeg: number) => void): number;
+  clearHeading(id: number): void;
+}
+
+function browserHeadingAdapter(): HeadingAdapter {
+  const handlers = new Map<number, (e: Event) => void>();
+  let nextId = 1;
+  return {
+    watchHeading(cb) {
+      const handler = (e: Event) => {
+        const de = e as DeviceOrientationEvent & { webkitCompassHeading?: number };
+        // iOS: webkitCompassHeading은 이미 "북쪽=0"인 실제 방위각. 안드로이드/크롬은 alpha가
+        // 기기 기준 회전값이라 (360 - alpha)로 뒤집어야 나침반 방위(북=0, 시계방향)와 맞음
+        const heading = de.webkitCompassHeading ?? (de.alpha != null ? (360 - de.alpha) % 360 : null);
+        if (heading != null) cb(heading);
+      };
+      const eventName = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+      const id = nextId++;
+      handlers.set(id, handler);
+
+      const requestPermission = (DeviceOrientationEvent as any)?.requestPermission;
+      if (typeof requestPermission === 'function') {
+        requestPermission().then((state: string) => {
+          if (state === 'granted') window.addEventListener(eventName, handler);
+        }).catch(() => {});
+      } else {
+        window.addEventListener(eventName, handler);
+      }
+      return id;
+    },
+    clearHeading(id) {
+      const handler = handlers.get(id);
+      if (handler) {
+        window.removeEventListener('deviceorientationabsolute', handler);
+        window.removeEventListener('deviceorientation', handler);
+        handlers.delete(id);
+      }
+    },
+  };
+}
+
 interface Props {
   route: HybridRoute;
   height?: string;
   geo?: GeoAdapter;
+  heading?: HeadingAdapter;
 }
 
-const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
+const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo, heading }) => {
   const getGeo = (): GeoAdapter => geo ?? navigator.geolocation;
+  // 매번 새로 만들면 clearHeading이 자기가 등록 안 한 다른 인스턴스의 handlers를 봐서
+  // 못 지움 — ref로 하나만 만들어 재사용
+  const defaultHeading = useRef<HeadingAdapter | null>(null);
+  const getHeading = (): HeadingAdapter => {
+    if (heading) return heading;
+    if (!defaultHeading.current) defaultHeading.current = browserHeadingAdapter();
+    return defaultHeading.current;
+  };
+  const headingWatchId = useRef<number | null>(null);
+  const headingDeg = useRef<number>(0);
   const mapRef    = useRef<HTMLDivElement>(null);
   const mapInst   = useRef<any>(null);
   const overlays  = useRef<any[]>([]);
@@ -164,6 +220,11 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
       myLocOverlay.current.setMap(null);
       myLocOverlay.current = null;
     }
+    if (headingWatchId.current !== null) {
+      getHeading().clearHeading(headingWatchId.current);
+      headingWatchId.current = null;
+    }
+    myLocConeEl.current = null;
   };
 
   const addOverlay = (map: any, kakao: any, lat: number, lng: number, html: string, yAnchor = 1.1) => {
@@ -348,6 +409,21 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
     return () => { cancelled = true; clearMap(); };
   }, [route]);
 
+  // 방향 원뿔(cone) DOM 노드를 직접 들고 있다가 heading이 바뀔 때마다 transform만 갱신 —
+  // 나침반은 초당 여러 번 갱신되는데, 그때마다 Kakao CustomOverlay content를 통째로
+  // 새로 그리면(setContent) 매번 리플로우/깜빡임이 생겨서 DOM 노드를 직접 돌림
+  const myLocConeEl = useRef<HTMLDivElement | null>(null);
+
+  const updateHeadingCone = (deg: number) => {
+    headingDeg.current = deg;
+    if (myLocConeEl.current) {
+      myLocConeEl.current.style.opacity = '1';
+      // transform-origin이 삼각형의 밑변(50% 100%)이라 translate로 그 점을 마커 중심에
+      // 맞춰두면, rotate는 그 중심점을 축으로 뾰족한 끝만 시계방향으로 도는 나침반처럼 움직임
+      myLocConeEl.current.style.transform = `translate(-50%, -100%) rotate(${deg}deg)`;
+    }
+  };
+
   // 마커가 있으면 위치만 옮기고(setPosition), 없을 때만 새로 생성 — 클릭마다
   // 새로 만들면 이전 마커가 지도에 남아 계속 쌓이던 버그라 반드시 재사용해야 함
   const placeMyLocMarker = (map: any, kakao: any, lat: number, lng: number, pan: boolean) => {
@@ -356,10 +432,33 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
     if (myLocOverlay.current) {
       myLocOverlay.current.setPosition(pos);
     } else {
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:relative;width:20px;height:20px;';
+
+      const cone = document.createElement('div');
+      // 북쪽(0deg)일 때 위를 가리키는 삼각형 — 방향을 아직 못 받아온 상태(opacity 0)로 시작
+      cone.style.cssText = `
+        position:absolute;left:50%;top:50%;width:0;height:0;opacity:0;
+        border-left:12px solid transparent;border-right:12px solid transparent;
+        border-bottom:34px solid rgba(59,130,246,0.35);
+        transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);
+        pointer-events:none;transition:opacity 0.2s;
+      `;
+      myLocConeEl.current = cone;
+
+      const dot = document.createElement('div');
+      dot.style.cssText = `
+        position:absolute;left:50%;top:50%;width:20px;height:20px;margin:-10px 0 0 -10px;
+        background:#3B82F6;border:3px solid white;border-radius:50%;
+        box-shadow:0 0 0 6px rgba(59,130,246,0.2);
+      `;
+
+      wrapper.appendChild(cone);
+      wrapper.appendChild(dot);
+
       myLocOverlay.current = new kakao.maps.CustomOverlay({
         position: pos,
-        content: `<div style="width:20px;height:20px;background:#3B82F6;border:3px solid white;
-          border-radius:50%;box-shadow:0 0 0 6px rgba(59,130,246,0.2);"></div>`,
+        content: wrapper,
         yAnchor: 0.5,
       });
       myLocOverlay.current.setMap(map);
@@ -376,6 +475,12 @@ const TmapRouteView: React.FC<Props> = ({ route, height = '40vh', geo }) => {
     const kakao: any = (window as any).kakao;
     /* eslint-enable */
     if (!map) return;
+
+    // iOS는 DeviceOrientationEvent 권한도 위치처럼 사용자 제스처가 필요해서, 위치 요청(비동기)이
+    // 끝난 뒤가 아니라 버튼 클릭 이 시점에 바로(동기적으로) 요청해야 허가 요청이 씹히지 않음
+    if (headingWatchId.current === null) {
+      headingWatchId.current = getHeading().watchHeading(updateHeadingCone);
+    }
 
     if (isTracking) {
       getGeo().getCurrentPosition(

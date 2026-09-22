@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import TmapRouteView, { GeoAdapter } from './TmapRouteView';
+import TmapRouteView, { GeoAdapter, HeadingAdapter } from './TmapRouteView';
 import { HybridRoute } from '../types';
 
 // iOS 네이티브 앱(출처 capacitor://localhost)에서는 카카오맵 SDK가 거부돼서(도메인 불일치,
@@ -58,19 +58,41 @@ const EmbedMap: React.FC = () => {
     return { adapter, handle };
   }, []);
 
+  const heading = useMemo(() => {
+    const callbacks = new Map<number, (deg: number) => void>();
+    let nextId = 1;
+    const adapter: HeadingAdapter = {
+      watchHeading(cb) {
+        const id = nextId++;
+        callbacks.set(id, cb);
+        window.parent.postMessage({ type: 'embed-heading-watch', id }, '*');
+        return id;
+      },
+      clearHeading(id) {
+        callbacks.delete(id);
+        window.parent.postMessage({ type: 'embed-heading-clear', id }, '*');
+      },
+    };
+    const handle = (data: any) => {
+      if (data.type === 'embed-heading-result') callbacks.get(data.id)?.(data.heading);
+    };
+    return { adapter, handle };
+  }, []);
+
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (!ALLOWED_PARENT_ORIGINS.includes(e.origin)) return;
       if (e.data?.type === 'embed-map-route') setRoute(e.data.route);
       else if (typeof e.data?.type === 'string' && e.data.type.startsWith('embed-geo-')) geo.handle(e.data);
+      else if (typeof e.data?.type === 'string' && e.data.type.startsWith('embed-heading-')) heading.handle(e.data);
     };
     window.addEventListener('message', onMessage);
     window.parent.postMessage({ type: 'embed-map-ready' }, '*');
     return () => window.removeEventListener('message', onMessage);
-  }, [geo]);
+  }, [geo, heading]);
 
   if (!route) return null;
-  return <TmapRouteView route={route} height="100vh" geo={geo.adapter} />;
+  return <TmapRouteView route={route} height="100vh" geo={geo.adapter} heading={heading.adapter} />;
 };
 
 export default EmbedMap;

@@ -31,10 +31,22 @@ const IosMapFrame: React.FC<Props> = ({ route, height = '40vh' }) => {
 
   useEffect(() => {
     const watches = watchesRef.current;
+    const headingHandlers = new Map<number, (e: Event) => void>();
     const onError = (id: number) => (e: unknown) =>
       post({ type: 'embed-geo-error', id, message: (e as { message?: string })?.message ?? '위치 오류' });
     const onOk = (id: number) => (p: GeolocationPosition) =>
       post({ type: 'embed-geo-result', id, latitude: p.coords.latitude, longitude: p.coords.longitude });
+
+    const orientationEvent = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+    const startHeading = (id: number) => {
+      const handler = (e: Event) => {
+        const de = e as DeviceOrientationEvent & { webkitCompassHeading?: number };
+        const h = de.webkitCompassHeading ?? (de.alpha != null ? (360 - de.alpha) % 360 : null);
+        if (h != null) post({ type: 'embed-heading-result', id, heading: h });
+      };
+      headingHandlers.set(id, handler);
+      window.addEventListener(orientationEvent, handler);
+    };
 
     const onMessage = (e: MessageEvent) => {
       if (e.source !== frameRef.current?.contentWindow || e.origin !== EMBED_ORIGIN) return;
@@ -50,6 +62,18 @@ const IosMapFrame: React.FC<Props> = ({ route, height = '40vh' }) => {
         const watchId = watches.get(id);
         if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
         watches.delete(id);
+      } else if (type === 'embed-heading-watch') {
+        // iOS 13+는 DeviceOrientationEvent도 위치 권한처럼 사용자 제스처 안에서 허가를 받아야 함
+        const requestPermission = (DeviceOrientationEvent as any)?.requestPermission;
+        if (typeof requestPermission === 'function') {
+          requestPermission().then((state: string) => { if (state === 'granted') startHeading(id); }).catch(() => {});
+        } else {
+          startHeading(id);
+        }
+      } else if (type === 'embed-heading-clear') {
+        const handler = headingHandlers.get(id);
+        if (handler) window.removeEventListener(orientationEvent, handler);
+        headingHandlers.delete(id);
       }
     };
     window.addEventListener('message', onMessage);
@@ -57,6 +81,8 @@ const IosMapFrame: React.FC<Props> = ({ route, height = '40vh' }) => {
       window.removeEventListener('message', onMessage);
       watches.forEach(watchId => navigator.geolocation.clearWatch(watchId));
       watches.clear();
+      headingHandlers.forEach(handler => window.removeEventListener(orientationEvent, handler));
+      headingHandlers.clear();
     };
   }, []);
 
