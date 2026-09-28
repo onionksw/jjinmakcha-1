@@ -1,9 +1,9 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 
-// 귀가 중 카운트다운을 앱이 백그라운드/잠금화면에 있어도 상단 알림 카드로 보여주는 안드로이드
-// 전용 커스텀 플러그인(android/.../CommuteNotificationPlugin.java) — iOS/웹 구현은 없음.
-// 라이브 액티비티가 필요한 iOS는 Xcode 위젯 익스텐션이 있어야 해서 별도로 진행하기 전까지는
-// 안드로이드만 지원. 필드는 android/.../notification_commute_*.xml이 그대로 보여주는 값.
+// 귀가 중 카운트다운을 앱이 백그라운드/잠금화면에 있어도 보여주는 커스텀 플러그인.
+// 안드로이드: 상단 알림 카드(android/.../CommuteNotificationPlugin.java)
+// iOS: 잠금화면/다이나믹 아일랜드 라이브 액티비티(ios/App/App/CommuteLiveActivityPlugin.swift)
+// 웹은 미지원. 필드는 두 플랫폼 모두 그대로 화면에 보여주는 값.
 export interface CommuteNotifyPayload {
   routeName: string;
   urgent: boolean;
@@ -13,6 +13,9 @@ export interface CommuteNotifyPayload {
   departureClock: string; // "15:12" / "--:--"
   walkText: string;       // "1분" / "바로"
   countdownText: string;  // "2분 58초" / "지금 출발!"
+  // iOS 전용: 출발 시각(epoch ms). iOS는 백그라운드에서 JS가 멈춰 텍스트 갱신이 안 되므로
+  // 이 값으로 OS가 직접 카운트다운을 그림. 0/생략이면 countdownText를 그대로 표시.
+  targetEpochMs?: number;
 }
 
 interface CommuteNotificationPlugin {
@@ -23,7 +26,10 @@ interface CommuteNotificationPlugin {
 
 const CommuteNotification = registerPlugin<CommuteNotificationPlugin>('CommuteNotification');
 
-const isSupported = () => Capacitor.getPlatform() === 'android';
+const isSupported = () => {
+  const platform = Capacitor.getPlatform();
+  return platform === 'android' || platform === 'ios';
+};
 
 export async function startCommuteNotification(payload: CommuteNotifyPayload): Promise<void> {
   if (!isSupported()) return;

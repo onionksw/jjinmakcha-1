@@ -956,6 +956,9 @@ const App: React.FC = () => {
           countdownText: state.leaveInMins !== null && state.leaveInMins <= 0
               ? '지금 출발!'
               : `${state.mins}분 ${String(state.secs).padStart(2, '0')}초`,
+          targetEpochMs: state.leaveInMins !== null && state.leaveInMins > 0
+              ? now + (state.mins * 60 + state.secs) * 1000
+              : 0,
       });
   }, [commutingRoute]);
 
