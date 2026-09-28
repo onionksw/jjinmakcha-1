@@ -77,7 +77,7 @@
 		<string>remote-notification</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>출발지를 자동으로 찾기 위해 위치 정보를 사용합니다.</string>
+	<string>출발지를 자동으로 입력하고, 경로 지도에 내 위치를 표시하기 위해 위치 정보를 사용합니다.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
