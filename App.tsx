@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { MapPin, Navigation, Bus, Train, ArrowRight, ChevronLeft, Search, Beer, Car, Clock, Sparkles, User, CreditCard, Home, Settings, Edit2, Bell, ToggleLeft, ToggleRight, Store, Star, X, Utensils, BellRing, Shield, TrendingUp, Phone, Footprints, ChevronRight, FileText, Plus, Coffee, Wine, Mail, Camera, Trash2, Share2, ChevronDown } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { Share } from '@capacitor/share';
+import { Browser } from '@capacitor/browser';
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
@@ -832,6 +833,16 @@ const App: React.FC = () => {
   const requireLogin = (action: () => void) => {
     if (isLoggedIn) action();
     else setShowLoginPrompt(true);
+  };
+
+  // 네이티브 앱은 WebView라 window.open('_blank')가 막히고 상대경로도 앱 번들을 가리킴 —
+  // 실제 웹사이트 주소를 기기 브라우저(앱 내 브라우저)로 열어야 함
+  const openLegalPage = (path: '/privacy' | '/terms') => {
+    if (Capacitor.isNativePlatform()) {
+      Browser.open({ url: `https://jjinmakcha.com${path}` }).catch(() => {});
+    } else {
+      window.open(path, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -1832,7 +1843,7 @@ const App: React.FC = () => {
                         <ChevronRight size={16} className="text-gray-300 shrink-0" />
                     </button>
                     <div className="mx-5 h-px bg-gray-50" />
-                    <button onClick={() => window.open('/privacy', '_blank', 'noopener,noreferrer')} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
+                    <button onClick={() => openLegalPage('/privacy')} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
                         <div className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center shrink-0">
                             <FileText size={18} className="text-gray-400" />
                         </div>
@@ -1842,7 +1853,7 @@ const App: React.FC = () => {
                         <ChevronRight size={16} className="text-gray-300 shrink-0" />
                     </button>
                     <div className="mx-5 h-px bg-gray-50" />
-                    <button onClick={() => window.open('/terms', '_blank', 'noopener,noreferrer')} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
+                    <button onClick={() => openLegalPage('/terms')} className="w-full flex items-center gap-4 px-5 py-4 hover:bg-gray-50 transition-colors active:bg-gray-100">
                         <div className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center shrink-0">
                             <FileText size={18} className="text-gray-400" />
                         </div>
@@ -2366,9 +2377,9 @@ const App: React.FC = () => {
 
       <p className="text-center text-[11px] text-gray-300 font-medium mt-6 leading-relaxed">
         가입 시{' '}
-        <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline">이용약관</a>
+        <a href="/terms" target="_blank" rel="noopener noreferrer" onClick={(e) => { e.preventDefault(); openLegalPage('/terms'); }} className="underline">이용약관</a>
         {' '}및{' '}
-        <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline">개인정보처리방침</a>
+        <a href="/privacy" target="_blank" rel="noopener noreferrer" onClick={(e) => { e.preventDefault(); openLegalPage('/privacy'); }} className="underline">개인정보처리방침</a>
         에 동의하게 됩니다.
       </p>
     </div>
