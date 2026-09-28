@@ -50,8 +50,12 @@ public class CommuteNotificationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        guard #available(iOS 16.2, *), ActivityAuthorizationInfo().areActivitiesEnabled else {
-            call.resolve()
+        guard #available(iOS 16.2, *) else {
+            call.reject("iOS 16.2 미만")
+            return
+        }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            call.reject("이 기기에서 라이브 액티비티가 꺼져 있음")
             return
         }
         let attributes = CommuteActivityAttributes(routeName: call.getString("routeName") ?? "찐막차")
@@ -61,15 +65,15 @@ public class CommuteNotificationPlugin: CAPPlugin, CAPBridgedPlugin {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
             do {
-                _ = try Activity.request(
+                let activity = try Activity.request(
                     attributes: attributes,
                     content: ActivityContent(state: state, staleDate: nil),
                     pushType: nil
                 )
+                call.resolve(["id": activity.id])
             } catch {
-                // 사용자가 라이브 액티비티를 껐거나 동시 실행 한도 초과 — 핵심 기능이 아니라 조용히 무시
+                call.reject("Activity.request 실패: \(error) / \(error.localizedDescription)")
             }
-            call.resolve()
         }
     }
 
