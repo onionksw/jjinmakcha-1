@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .vercel
 .env*
+
+# Xcode가 맥에서 자동 생성하는 SPM 버전 고정 파일 — CI에서 다르게 해석되어 Xcode가 크래시한 적 있어 커밋하지 않음
+ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
