@@ -12,6 +12,8 @@
 	<dict>
 		<key>com.jjinmakcha.app</key>
 		<string>jjinmakcha AppStore</string>
+		<key>com.jjinmakcha.app.CommuteWidget</key>
+		<string>jjinmakcha CommuteWidget AppStore</string>
 	</dict>
 	<key>destination</key>
 	<string>upload</string>
