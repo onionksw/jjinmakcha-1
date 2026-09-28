@@ -19,7 +19,7 @@ export interface CommuteNotifyPayload {
 }
 
 interface CommuteNotificationPlugin {
-  start(options: CommuteNotifyPayload): Promise<{ id?: string } | void>;
+  start(options: CommuteNotifyPayload): Promise<void>;
   update(options: CommuteNotifyPayload): Promise<void>;
   stop(): Promise<void>;
 }
@@ -33,14 +33,7 @@ const isSupported = () => {
 
 export async function startCommuteNotification(payload: CommuteNotifyPayload): Promise<void> {
   if (!isSupported()) return;
-  try {
-    const res = await CommuteNotification.start(payload);
-    // TODO(디버그): iOS 라이브 액티비티 원인 확인용 임시 알림창 — 확인 끝나면 삭제
-    if (Capacitor.getPlatform() === 'ios') alert('[LA디버그] 시작 성공 ' + JSON.stringify(res));
-  } catch (e) {
-    // 알림 실패는 핵심 기능이 아니라 조용히 무시 (아래 iOS 알림창은 임시 디버그)
-    if (Capacitor.getPlatform() === 'ios') alert('[LA디버그] 시작 실패: ' + (e instanceof Error ? e.message : JSON.stringify(e)));
-  }
+  try { await CommuteNotification.start(payload); } catch { /* 알림 실패는 핵심 기능이 아니라 조용히 무시 */ }
 }
 
 export async function updateCommuteNotification(payload: CommuteNotifyPayload): Promise<void> {
