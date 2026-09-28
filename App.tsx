@@ -5,7 +5,7 @@ import { Share } from '@capacitor/share';
 import { getOdsayTransitRoutes } from './services/odsayService';
 import { reverseGeocode, setCachedCoordinates, getCoordinates, searchOpenPlaces, OpenPlace, OpenPlaceCategory } from './services/tmapService';
 import { findLatestDeparture } from './services/latestDepartureService';
-import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, resolvePendingSocialLink, setupNativeAuthDeepLink, supabase } from './services/supabaseClient';
+import { ensureAnonymousSession, signInWithKakao, signInWithNaver, signInWithGoogle, signInWithApple, signOutSupabase, deleteAccountOnServer, resolvePendingSocialLink, setupNativeAuthDeepLink, supabase } from './services/supabaseClient';
 import { listFavorites, addFavorite, updateFavorite, deleteFavorite, Favorite, FavoriteKind } from './services/favoritesService';
 import { logSavings, getMonthlySavings, getTotalSavings, getLevel, getUsageHistory, UsageHistoryItem } from './services/savingsService';
 import { createSharedRoute, getSharedRoute } from './services/sharedRouteService';
@@ -835,9 +835,12 @@ const App: React.FC = () => {
   };
 
   const handleDeleteAccount = async () => {
-    // 실제 저장된 즐겨찾기(Supabase)를 전부 삭제 — 진짜 계정 데이터라 로그아웃만으로는 안 지워짐
-    await Promise.all(favorites.map(f => deleteFavorite(f.id)));
-    await signOutSupabase();
+    // 서버에서 즐겨찾기·절약 기록·알림 데이터와 계정 자체를 삭제 — 실패하면 화면을 그대로 두고 안내
+    const { error } = await deleteAccountOnServer();
+    if (error) {
+      alert('탈퇴 처리에 실패했어요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     setFavorites([]);
     setMonthlySavings(0);
     setTotalSavings(0);
@@ -2269,7 +2272,7 @@ const App: React.FC = () => {
                 <div className="bg-white w-full rounded-t-[2rem] p-6 shadow-2xl">
                     <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5" />
                     <p className="text-lg font-black text-gray-800 mb-1">정말 탈퇴하시겠어요?</p>
-                    <p className="text-sm text-gray-400 mb-6">즐겨찾기·집 주소 등 저장된 정보가 모두 삭제되고<br/>복구할 수 없어요.</p>
+                    <p className="text-sm text-gray-400 mb-6">계정과 즐겨찾기·절약 기록 등 저장된 정보가 모두 삭제되고<br/>복구할 수 없어요.</p>
                     <div className="flex gap-3">
                         <button onClick={() => setShowDeleteAccountConfirm(false)} className="flex-1 py-4 text-gray-500 bg-gray-100 rounded-2xl font-bold">취소</button>
                         <button onClick={handleDeleteAccount} className="flex-1 py-4 text-white bg-brandPink rounded-2xl font-black shadow-md shadow-red-200">탈퇴하기</button>

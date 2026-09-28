@@ -186,3 +186,14 @@ export async function signOutSupabase(): Promise<void> {
   // 세션의 uid를 그대로 돌려줘서 이후 요청이 전부 실패함
   anonAuthPromise = null;
 }
+
+// 서버(Edge Function delete-account)에서 내 데이터와 계정 자체를 삭제. 성공하면 이미 사라진
+// 계정이라 서버 로그아웃 요청은 보내지 않고 기기에 남은 세션만 지움.
+export async function deleteAccountOnServer(): Promise<{ error: string | null }> {
+  if (!supabase) return { error: '서버에 연결할 수 없어요.' };
+  const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
+  if (error) return { error: error.message };
+  await supabase.auth.signOut({ scope: 'local' });
+  anonAuthPromise = null;
+  return { error: null };
+}
