@@ -50,14 +50,17 @@ jobs:
           CERT_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
           CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
           PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          WIDGET_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
           CERT_PATH="$RUNNER_TEMP/distribution.p12"
           PROFILE_PATH="$RUNNER_TEMP/profile.mobileprovision"
+          WIDGET_PROFILE_PATH="$RUNNER_TEMP/widget-profile.mobileprovision"
 
           echo -n "$CERT_BASE64" | base64 -d -o "$CERT_PATH"
           echo -n "$PROFILE_BASE64" | base64 -d -o "$PROFILE_PATH"
+          echo -n "$WIDGET_PROFILE_BASE64" | base64 -d -o "$WIDGET_PROFILE_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
@@ -68,6 +71,7 @@ jobs:
 
           mkdir -p ~/Library/MobileDevice/"Provisioning Profiles"
           cp "$PROFILE_PATH" ~/Library/MobileDevice/"Provisioning Profiles"/
+          cp "$WIDGET_PROFILE_PATH" ~/Library/MobileDevice/"Provisioning Profiles"/
 
       - name: Archive
         # 서명 관련 값(CODE_SIGN_STYLE=Manual 등)은 커맨드라인 대신 App 타겟의
@@ -104,6 +108,7 @@ jobs:
         run: |
           security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" || true
           rm -f ~/Library/MobileDevice/"Provisioning Profiles"/profile.mobileprovision
+          rm -f ~/Library/MobileDevice/"Provisioning Profiles"/widget-profile.mobileprovision
           rm -rf "$RUNNER_TEMP/private_keys"
 
       - name: Upload IPA artifact (backup)
