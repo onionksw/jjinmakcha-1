@@ -2565,6 +2565,8 @@ const App: React.FC = () => {
             </div>
 
             {/* 카카오 채널 알림 배너 */}
+            {/* 웹 전용 — 스토어에 출시된 앱에서는 "출시 알림" 문구가 맞지 않아 숨김 */}
+            {!Capacitor.isNativePlatform() && (
             <a
                 href="http://pf.kakao.com/_EiWxnX"
                 target="_blank"
@@ -2575,6 +2577,7 @@ const App: React.FC = () => {
                 <p className="flex-1 font-black text-[#3C1E1E] text-sm">공식 출시 알림 받기 🔔</p>
                 <ChevronRight size={15} className="text-[#3C1E1E]/40 shrink-0" />
             </a>
+            )}
 
             {/* 오늘의 찐막차 배너 — 히든 처리 */}
             <div className="hidden">
