@@ -88,8 +88,8 @@ export default defineConfig(({ mode }) => {
                     skipWaiting: true,
                     clientsClaim: true,
                     globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-                    // /landing은 별도 정적 페이지이므로 SPA 네비게이션 폴백(index.html 강제 서빙) 대상에서 제외
-                    navigateFallbackDenylist: [/^\/landing/, /^\/privacy/, /^\/terms/],
+                    // /landing, /guide 등은 별도 정적 페이지이므로 SPA 네비게이션 폴백(index.html 강제 서빙) 대상에서 제외
+                    navigateFallbackDenylist: [/^\/landing/, /^\/privacy/, /^\/terms/, /^\/guide/],
                     runtimeCaching: [
                         {
                             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
