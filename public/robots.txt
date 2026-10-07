@@ -1,0 +1,32 @@
+User-agent: *
+Allow: /
+
+# AI 답변 엔진 크롤러 — 명시적으로 허용(기본값은 각 봇마다 달라 명확히 적어둠)
+User-agent: GPTBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://jjinmakcha.com/sitemap.xml

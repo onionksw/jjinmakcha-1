@@ -3,6 +3,6 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/((?!api/|landing$|landing/|privacy$|privacy/|terms$|terms/|ads\\.txt$).*)", "destination": "/index.html" }
+    { "source": "/((?!api/|landing$|landing/|privacy$|privacy/|terms$|terms/|ads\\.txt$|robots\\.txt$|sitemap\\.xml$|llms\\.txt$).*)", "destination": "/index.html" }
   ]
 }
