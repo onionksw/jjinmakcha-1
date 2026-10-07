@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>막차 택시 vs 지하철+버스, 뭐가 더 쌀까? | 찐막차</title>
+<meta name="description" content="택시만 탔을 때와 막차+택시를 섞었을 때 비용을 비교하고, 상황별로 어떤 선택이 유리한지 정리했어요." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://jjinmakcha.com/guide/taxi-vs-transit" />
+<meta property="og:title" content="막차 택시 vs 지하철+버스, 뭐가 더 쌀까?" />
+<meta property="og:description" content="택시만 탔을 때와 막차+택시를 섞었을 때 비용을 비교하고, 상황별로 어떤 선택이 유리한지 정리했어요." />
+<meta property="og:type" content="article" />
+<style>
+  :root { --brand-blue: #4CC9F0; --ink: #14181F; --gray: #6B7280; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; color: var(--ink); line-height: 1.7; word-break: keep-all; }
+  header { padding: 24px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
+  header .logo-mark { width: 30px; height: 30px; background: linear-gradient(160deg, var(--brand-blue), #2EA8D6); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  header .logo-mark span { color: #fff; font-size: 15px; font-weight: 900; }
+  header .logo-text { font-weight: 900; font-size: 17px; }
+  header .logo-text b { color: var(--brand-blue); }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 20px 80px; }
+  .breadcrumb { font-size: 13px; margin-bottom: 16px; }
+  .breadcrumb a { color: var(--gray); text-decoration: none; }
+  h1 { font-size: 24px; margin-bottom: 6px; }
+  .meta { color: var(--gray); font-size: 13px; margin-bottom: 20px; }
+  .answer-box { background: #EAF8FE; border-left: 4px solid var(--brand-blue); padding: 16px 18px; border-radius: 12px; margin: 0 0 28px; font-weight: 700; font-size: 15px; }
+  h2 { font-size: 18px; margin: 32px 0 10px; padding-top: 8px; }
+  p, li { font-size: 15px; color: #333; margin-bottom: 10px; }
+  ul, ol { padding-left: 20px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 700; }
+  a { color: var(--brand-blue); }
+  .box { background: #f7f8fa; border-radius: 12px; padding: 16px 18px; margin: 12px 0; font-size: 13px; }
+  .cta { background: linear-gradient(135deg, var(--brand-blue), #2EA8D6); border-radius: 16px; padding: 24px 20px; text-align: center; color: #fff; margin: 36px 0; }
+  .cta p { color: #fff; font-weight: 700; margin-bottom: 14px; }
+  .cta a { display: inline-block; background: #fff; color: var(--brand-blue); font-weight: 900; padding: 12px 24px; border-radius: 999px; text-decoration: none; }
+  .faq-item { margin-bottom: 18px; }
+  .faq-q { font-weight: 800; margin-bottom: 4px; }
+  .faq-a { color: #333; }
+  .related { font-size: 13px; color: var(--gray); margin-top: 32px; padding-top: 16px; border-top: 1px solid #eee; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "막차 택시 vs 지하철+버스, 뭐가 더 쌀까?",
+      "description": "택시만 탔을 때와 막차+택시를 섞었을 때 비용을 비교하고, 상황별로 어떤 선택이 유리한지 정리했어요.",
+      "datePublished": "2026-10-07",
+      "dateModified": "2026-10-07",
+      "author": { "@type": "Organization", "name": "찐막차" },
+      "publisher": { "@type": "Organization", "name": "꿀렁", "url": "https://jjinmakcha.com" },
+      "mainEntityOfPage": "https://jjinmakcha.com/guide/taxi-vs-transit"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "무조건 대중교통이 택시보다 저렴한가요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "보통은 그렇지만, 막차를 놓치면 그 시점부터는 대중교통 선택지가 사라지기 때문에 택시가 유일한 방법이 되는 경우가 많아요." }
+        },
+        {
+          "@type": "Question",
+          "name": "막차+택시를 섞는 게 왜 유리한가요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "지하철이나 버스로 갈 수 있는 구간까지 최대한 타고, 막차가 끊긴 나머지 구간만 택시로 이동하면 택시 거리가 짧아져서 전체 비용이 줄어들어요." }
+        },
+        {
+          "@type": "Question",
+          "name": "비용과 시간 중 뭘 더 중요하게 봐야 하나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "다음 날 일정이 있다면 시간을, 예산이 빠듯하다면 비용을 우선 기준으로 두고 경로를 비교하는 게 좋아요." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+  <span class="logo-mark"><span>찐</span></span>
+  <span class="logo-text">찐<b>막차</b></span>
+</header>
+
+<main>
+  <p class="breadcrumb"><a href="/guide">← 귀가 가이드 목록</a></p>
+  <h1>막차 택시 vs 지하철+버스, 뭐가 더 쌀까?</h1>
+  <p class="meta">작성일 2026.10.07 · 찐막차</p>
+
+  <div class="answer-box">
+    막차 시간 안에 있다면 대중교통이 대체로 저렴하고, 막차를 놓쳤다면 택시가 유일한 선택이 돼요.
+    애매하게 걸칠 때는 갈 수 있는 구간까지 대중교통을 타고 남은 구간만 택시를 타는 "하이브리드 경로"가 가장 합리적인 경우가 많아요.
+  </div>
+
+  <h2>단순 비교: 택시 vs 대중교통</h2>
+  <p>
+    같은 거리를 이동한다고 가정하면, 일반적으로 지하철·버스가 택시보다 훨씬 저렴해요.
+    다만 막차 시간이 지나면 대중교통이라는 선택지 자체가 사라지기 때문에, "얼마나 저렴한가"보다
+    "지금 이용할 수 있는가"가 먼저 확인해야 할 조건이에요.
+  </p>
+
+  <h2>막차 시간이 애매할 때 왜 "섞어서" 타는 게 유리한가</h2>
+  <p>
+    예를 들어 지하철로 역 몇 곳을 더 갈 수 있는데 그 이후 구간의 막차가 끊긴 상황이라면,
+    갈 수 있는 곳까지는 지하철을 타고 나머지 구간만 택시를 타는 게 택시로 전체 거리를 이동하는 것보다 저렴해요.
+    택시로 이동하는 거리가 짧아질수록 요금도 함께 줄어들기 때문이에요.
+  </p>
+
+  <h2>비교할 때 고려해야 할 것</h2>
+  <p>
+    단순히 요금만 볼 게 아니라 전체 소요 시간, 환승 횟수, 도보 구간의 안전까지 같이 고려하는 게 좋아요.
+    비용은 아끼지만 시간이 훨씬 오래 걸리거나 환승이 복잡하다면, 다음 날 일정에 따라 선택이 달라질 수 있어요.
+  </p>
+
+  <table>
+    <tr><th>상황</th><th>유리한 선택</th></tr>
+    <tr><td>막차 시간이 충분히 남음</td><td>지하철·버스만으로 이동</td></tr>
+    <tr><td>막차가 애매하게 걸림</td><td>대중교통 + 택시 혼합 경로</td></tr>
+    <tr><td>막차가 완전히 끊김</td><td>택시 또는 심야버스·대기</td></tr>
+  </table>
+
+  <h2>자동으로 비교해주는 방법</h2>
+  <p>
+    매번 구간별 요금과 시간을 직접 계산하기는 번거로워요. 출발지와 도착지를 입력하면
+    택시 단독 경로와 대중교통+택시 혼합 경로를 함께 비교해서 더 저렴한 쪽을 보여주는 서비스를 쓰면 빨라요.
+  </p>
+
+  <div class="cta">
+    <p>출발지와 도착지만 입력하면, 택시만 탔을 때와 막차+택시를 섞었을 때의 예상 요금을 바로 비교해드려요.</p>
+    <a href="/?ref=guide-taxi-vs-transit">찐막차로 경로 비교하기 →</a>
+  </div>
+
+  <h2>자주 묻는 질문</h2>
+  <div class="faq-item">
+    <p class="faq-q">Q. 무조건 대중교통이 택시보다 저렴한가요?</p>
+    <p class="faq-a">A. 보통은 그렇지만, 막차를 놓치면 그 시점부터는 대중교통 선택지가 사라지기 때문에 택시가 유일한 방법이 되는 경우가 많아요.</p>
+  </div>
+  <div class="faq-item">
+    <p class="faq-q">Q. 막차+택시를 섞는 게 왜 유리한가요?</p>
+    <p class="faq-a">A. 지하철이나 버스로 갈 수 있는 구간까지 최대한 타고, 막차가 끊긴 나머지 구간만 택시로 이동하면 택시 거리가 짧아져서 전체 비용이 줄어들어요.</p>
+  </div>
+  <div class="faq-item">
+    <p class="faq-q">Q. 비용과 시간 중 뭘 더 중요하게 봐야 하나요?</p>
+    <p class="faq-a">A. 다음 날 일정이 있다면 시간을, 예산이 빠듯하다면 비용을 우선 기준으로 두고 경로를 비교하는 게 좋아요.</p>
+  </div>
+
+  <p class="related">
+    관련 글: <a href="/guide/makcha-missed">막차 놓쳤을 때 대처법</a> ·
+    <a href="/guide/taxi-surcharge">심야 택시 요금 할증 계산법</a> ·
+    <a href="/guide/subway-last-train-time">지하철 막차 시간 확인법</a>
+  </p>
+</main>
+
+</body>
+</html>

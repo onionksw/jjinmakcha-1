@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>지하철 막차 시간, 가장 빠르게 확인하는 방법 | 찐막차</title>
+<meta name="description" content="지하철 막차 시간이 역마다, 요일마다 다른 이유와 정확하게 확인하는 방법을 정리했어요." />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://jjinmakcha.com/guide/subway-last-train-time" />
+<meta property="og:title" content="지하철 막차 시간, 가장 빠르게 확인하는 방법" />
+<meta property="og:description" content="지하철 막차 시간이 역마다, 요일마다 다른 이유와 정확하게 확인하는 방법을 정리했어요." />
+<meta property="og:type" content="article" />
+<style>
+  :root { --brand-blue: #4CC9F0; --ink: #14181F; --gray: #6B7280; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; color: var(--ink); line-height: 1.7; word-break: keep-all; }
+  header { padding: 24px 20px; border-bottom: 1px solid #eee; display: flex; align-items: center; gap: 10px; }
+  header .logo-mark { width: 30px; height: 30px; background: linear-gradient(160deg, var(--brand-blue), #2EA8D6); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  header .logo-mark span { color: #fff; font-size: 15px; font-weight: 900; }
+  header .logo-text { font-weight: 900; font-size: 17px; }
+  header .logo-text b { color: var(--brand-blue); }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 20px 80px; }
+  .breadcrumb { font-size: 13px; margin-bottom: 16px; }
+  .breadcrumb a { color: var(--gray); text-decoration: none; }
+  h1 { font-size: 24px; margin-bottom: 6px; }
+  .meta { color: var(--gray); font-size: 13px; margin-bottom: 20px; }
+  .answer-box { background: #EAF8FE; border-left: 4px solid var(--brand-blue); padding: 16px 18px; border-radius: 12px; margin: 0 0 28px; font-weight: 700; font-size: 15px; }
+  h2 { font-size: 18px; margin: 32px 0 10px; padding-top: 8px; }
+  p, li { font-size: 15px; color: #333; margin-bottom: 10px; }
+  ul, ol { padding-left: 20px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f7f8fa; font-weight: 700; }
+  a { color: var(--brand-blue); }
+  .box { background: #f7f8fa; border-radius: 12px; padding: 16px 18px; margin: 12px 0; font-size: 13px; }
+  .cta { background: linear-gradient(135deg, var(--brand-blue), #2EA8D6); border-radius: 16px; padding: 24px 20px; text-align: center; color: #fff; margin: 36px 0; }
+  .cta p { color: #fff; font-weight: 700; margin-bottom: 14px; }
+  .cta a { display: inline-block; background: #fff; color: var(--brand-blue); font-weight: 900; padding: 12px 24px; border-radius: 999px; text-decoration: none; }
+  .faq-item { margin-bottom: 18px; }
+  .faq-q { font-weight: 800; margin-bottom: 4px; }
+  .faq-a { color: #333; }
+  .related { font-size: 13px; color: var(--gray); margin-top: 32px; padding-top: 16px; border-top: 1px solid #eee; }
+</style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "headline": "지하철 막차 시간, 가장 빠르게 확인하는 방법",
+      "description": "지하철 막차 시간이 역마다, 요일마다 다른 이유와 정확하게 확인하는 방법을 정리했어요.",
+      "datePublished": "2026-10-07",
+      "dateModified": "2026-10-07",
+      "author": { "@type": "Organization", "name": "찐막차" },
+      "publisher": { "@type": "Organization", "name": "꿀렁", "url": "https://jjinmakcha.com" },
+      "mainEntityOfPage": "https://jjinmakcha.com/guide/subway-last-train-time"
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "지하철 막차 시간이 매일 똑같나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "아니요. 평일과 주말·공휴일 운행 일정이 다른 경우가 많고, 같은 노선이라도 방향과 종착역에 따라 막차 시간이 달라요." }
+        },
+        {
+          "@type": "Question",
+          "name": "출발역 막차가 아니라 내가 타는 역의 막차를 알아야 하나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "맞아요. 막차는 종착역 기준으로 안내되는 경우가 많아서, 내가 타려는 역을 그 열차가 몇 시에 지나가는지로 확인해야 정확해요." }
+        },
+        {
+          "@type": "Question",
+          "name": "환승이 있는 경로는 어떻게 확인하나요?",
+          "acceptedAnswer": { "@type": "Answer", "text": "환승역마다 막차 시간이 다르기 때문에, 구간별로 따로 확인하거나 출발지·도착지를 넣으면 전체 경로의 막차 가능 여부를 한 번에 계산해주는 서비스를 이용하는 게 편해요." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</head>
+<body>
+
+<header>
+  <span class="logo-mark"><span>찐</span></span>
+  <span class="logo-text">찐<b>막차</b></span>
+</header>
+
+<main>
+  <p class="breadcrumb"><a href="/guide">← 귀가 가이드 목록</a></p>
+  <h1>지하철 막차 시간, 가장 빠르게 확인하는 방법</h1>
+  <p class="meta">작성일 2026.10.07 · 찐막차</p>
+
+  <div class="answer-box">
+    지하철 막차 시간은 역, 방향, 요일에 따라 다 달라요. 정확히 확인하려면 각 운영사의 공식 앱·웹사이트에서
+    "내가 타는 역"과 "방향"을 기준으로 조회하거나, 출발지·도착지를 넣으면 자동으로 계산해주는 서비스를 쓰는 게 가장 빨라요.
+  </div>
+
+  <h2>왜 역마다 막차 시간이 다를까</h2>
+  <p>
+    지하철 막차는 종착역에 도착하는 마지막 열차를 기준으로 운행 일정이 짜여요. 그래서 같은 노선이라도
+    내가 타는 역이 출발점에 가까운지 종착점에 가까운지, 어느 방향으로 가는지에 따라 막차 시각이 크게 달라져요.
+    환승이 있는 경로라면 구간마다 막차 시간을 따로 확인해야 해요.
+  </p>
+
+  <h2>공식적으로 확인하는 방법</h2>
+  <p>
+    가장 정확한 방법은 각 지하철 운영사(서울교통공사, 각 노선사 등)의 공식 앱이나 웹사이트에서 역과 방향을 선택해 확인하는 거예요.
+    역 안내판이나 스크린도어에도 막차 시간이 표시되어 있는 경우가 많아요.
+  </p>
+
+  <h2>요일별로 달라지는 막차 시간</h2>
+  <p>
+    평일과 주말·공휴일의 운행 일정이 다른 노선들이 있어요. 금요일·토요일 심야에 연장 운행을 하는 구간도 있으니,
+    "평소 알던 시간"만 믿지 말고 그날그날 다시 확인하는 습관이 안전해요.
+  </p>
+
+  <h2>더 빠르게 확인하는 방법</h2>
+  <p>
+    매번 노선, 역, 방향을 따로 찾아보기 번거롭다면, 출발지와 도착지만 입력해서 전체 경로의 막차 가능 여부를
+    한 번에 계산해주는 서비스를 이용하는 게 훨씬 빨라요.
+  </p>
+
+  <div class="cta">
+    <p>출발지와 도착지만 입력하면, 환승을 포함한 전체 경로의 막차 가능 여부를 한 번에 계산해드려요.</p>
+    <a href="/?ref=guide-subway-last-train-time">찐막차로 막차 시간 확인하기 →</a>
+  </div>
+
+  <h2>자주 묻는 질문</h2>
+  <div class="faq-item">
+    <p class="faq-q">Q. 지하철 막차 시간이 매일 똑같나요?</p>
+    <p class="faq-a">A. 아니요. 평일과 주말·공휴일 운행 일정이 다른 경우가 많고, 같은 노선이라도 방향과 종착역에 따라 막차 시간이 달라요.</p>
+  </div>
+  <div class="faq-item">
+    <p class="faq-q">Q. 출발역 막차가 아니라 내가 타는 역의 막차를 알아야 하나요?</p>
+    <p class="faq-a">A. 맞아요. 막차는 종착역 기준으로 안내되는 경우가 많아서, 내가 타려는 역을 그 열차가 몇 시에 지나가는지로 확인해야 정확해요.</p>
+  </div>
+  <div class="faq-item">
+    <p class="faq-q">Q. 환승이 있는 경로는 어떻게 확인하나요?</p>
+    <p class="faq-a">A. 환승역마다 막차 시간이 다르기 때문에, 구간별로 따로 확인하거나 출발지·도착지를 넣으면 전체 경로의 막차 가능 여부를 한 번에 계산해주는 서비스를 이용하는 게 편해요.</p>
+  </div>
+
+  <p class="related">
+    관련 글: <a href="/guide/makcha-missed">막차 놓쳤을 때 대처법</a> ·
+    <a href="/guide/drinking-schedule">술자리 전 귀가 시간 확인법</a> ·
+    <a href="/guide/taxi-vs-transit">막차 택시 vs 대중교통 비교</a>
+  </p>
+</main>
+
+</body>
+</html>
